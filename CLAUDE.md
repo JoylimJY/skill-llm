@@ -51,8 +51,6 @@ instances/{instance_id}/
 - Task-specific packages are installed inside each container's Dockerfile
 
 ## Environment
-
-- Docker root is at `/data/docker-data` — check `df -h /data` before building images
 - Skills are in `anthropic-skills/` with 18 skill definitions; each has a `SKILL.md` entry point
 - The synthesis prompt instructs Claude to generate Dockerfiles based on `python:3.11-slim` or `node:20-slim`
 - Skill loading uses case-insensitive file matching (SKILL.md may reference `REFERENCE.md` but actual file is `reference.md`)
