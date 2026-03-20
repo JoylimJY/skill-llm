@@ -4,6 +4,7 @@ import json
 import subprocess
 import tempfile
 import shutil
+import sys
 from pathlib import Path
 
 from .schema import EvalResult
@@ -31,7 +32,7 @@ def evaluate(instance_dir: str, workspace_dir: str) -> EvalResult:
         shutil.copy2(eval_script, tmp_eval)
 
         result = subprocess.run(
-            ["python", str(tmp_eval), workspace_dir],
+            [sys.executable, str(tmp_eval), workspace_dir],
             capture_output=True,
             text=True,
             timeout=120,
@@ -94,7 +95,7 @@ def evaluate_in_container(instance_dir: str, container_id: str, sandbox) -> Eval
     )
 
     # Run eval
-    output, exit_code = sandbox.exec(container_id, "python /eval.py /workspace")
+    output, exit_code = sandbox.exec(container_id, "python3 /eval.py /workspace")
 
     if exit_code != 0:
         return EvalResult(
