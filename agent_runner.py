@@ -13,38 +13,40 @@ import json
 import re
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 from openai import OpenAI
 from src.sandbox import Sandbox
 from src.evaluator import evaluate_in_container
+from src.schema import RunSummary
+from src.prompts import load_prompt
 
-SYSTEM_PROMPT = """\
-You are an expert programming assistant working inside a Docker container with a Linux environment.
-Your working directory is /workspace, which contains input files for the task.
-
-You can execute commands by writing them inside a code block. Use one of these formats:
-
-```bash
-<your shell command here>
-```
-
-```python
-<your python script here>
-```
-
-Rules:
-- Execute ONE command/script at a time, then wait for the output before deciding what to do next.
-- You can list files, read files, write scripts, install packages, etc.
-- When you are DONE with the task, say exactly: TASK_COMPLETE
-- Always start by listing files in /workspace to understand what's available.
-- Think step by step. First understand the input files, then plan your approach, then execute.
-- If a command fails, analyze the error and try a different approach.
-- Make sure output files are in /workspace unless specified otherwise.
-"""
+SYSTEM_PROMPT = load_prompt("agent_system")
 
 MAX_TURNS = 20
 EXEC_TIMEOUT = 60
+MAX_CONTEXT_TOKENS = 28000  # Leave room for generation within 32k context
+MAX_OUTPUT_CHARS = 2000  # Truncate command output to avoid blowing context
+
+
+def estimate_tokens(messages: list[dict]) -> int:
+    """Rough token estimate: ~4 chars per token."""
+    return sum(len(m.get("content", "")) for m in messages) // 4
+
+
+def trim_messages(messages: list[dict], max_tokens: int) -> list[dict]:
+    """Keep system + first user message + trim older turns from the middle."""
+    if estimate_tokens(messages) <= max_tokens:
+        return messages
+    # Always keep: system (0), first user (1), and last 4 messages
+    keep_start = messages[:2]
+    keep_end = messages[-4:]
+    trimmed = keep_start + [{"role": "user", "content": "[Earlier conversation trimmed to save context]"}] + keep_end
+    # If still too long, truncate individual message contents
+    while estimate_tokens(trimmed) > max_tokens and len(trimmed) > 3:
+        trimmed.pop(2)  # Remove from middle
+    return trimmed
 
 
 def extract_code_block(text: str) -> tuple[str, str] | None:
@@ -117,12 +119,15 @@ def run_agent(
         if verbose:
             print(f"\n--- Turn {turn + 1}/{MAX_TURNS} ---")
 
+        # Trim context if needed
+        api_messages = trim_messages(messages, MAX_CONTEXT_TOKENS)
+
         # Call the model
         try:
             response = client.chat.completions.create(
                 model=model,
-                messages=messages,
-                max_tokens=4096,
+                messages=api_messages,
+                max_tokens=2048,
                 temperature=0.7,
             )
         except Exception as e:
@@ -164,10 +169,13 @@ def run_agent(
         if verbose:
             print(f"\n[OUTPUT]:\n{output[:2000]}{'...' if len(output) > 2000 else ''}")
 
-        # Feed output back to the model
+        # Feed output back to the model (truncated to avoid context overflow)
+        truncated_output = output[:MAX_OUTPUT_CHARS]
+        if len(output) > MAX_OUTPUT_CHARS:
+            truncated_output += f"\n... [truncated, {len(output)} chars total]"
         messages.append({
             "role": "user",
-            "content": f"Command output:\n```\n{output[:4000]}\n```\nContinue with the task. If done, say TASK_COMPLETE.",
+            "content": f"Command output:\n```\n{truncated_output}\n```\nContinue with the task. If done, say TASK_COMPLETE.",
         })
 
     else:
@@ -183,14 +191,37 @@ def main():
     parser.add_argument("--api-base", default="http://localhost:8100/v1", help="vLLM API base URL")
     parser.add_argument("--model", default="Qwen/Qwen3-8B", help="Model name")
     parser.add_argument("--max-turns", type=int, default=20, help="Maximum interaction turns")
+    parser.add_argument("--run-dir", help="Directory to save results (default: results/{model}_{timestamp})")
     parser.add_argument("--no-eval", action="store_true", help="Skip evaluation after agent run")
+    parser.add_argument("--cleanup", action="store_true", help="Destroy container after evaluation")
     parser.add_argument("--verbose", action="store_true", default=True, help="Verbose output")
     args = parser.parse_args()
 
     global MAX_TURNS
     MAX_TURNS = args.max_turns
 
+    # Resolve run output directory
+    if args.run_dir:
+        run_dir = Path(args.run_dir)
+    else:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        model_slug = args.model.replace("/", "_")
+        run_dir = Path("results") / f"{model_slug}_{ts}"
+
     instance_dir = args.instance
+    instance_id = Path(instance_dir).name
+
+    # Check build_status — skip failed instances
+    task_json_path = Path(instance_dir) / "task.json"
+    if task_json_path.exists():
+        task_data = json.loads(task_json_path.read_text())
+        if task_data.get("build_status") == "failed":
+            print(f"Skipping {instance_id}: build_status is 'failed'")
+            sys.exit(0)
+
+    run_instance_dir = run_dir / instance_id
+    run_instance_dir.mkdir(parents=True, exist_ok=True)
+
     sandbox = Sandbox()
 
     # Check if container already exists
@@ -226,8 +257,8 @@ def main():
         verbose=args.verbose,
     )
 
-    # Save conversation
-    conv_path = Path(instance_dir) / "conversation.json"
+    # Save conversation to run directory
+    conv_path = run_instance_dir / "conversation.json"
     conv_path.write_text(json.dumps(messages, indent=2, ensure_ascii=False))
     print(f"\nConversation saved to {conv_path}")
 
@@ -247,9 +278,31 @@ def main():
                 status = "✅" if check.get("passed") else "❌"
                 print(f"    {status} {check.get('name', '?')}: {check.get('detail', '')}")
 
-        result_path = Path(instance_dir) / "result.json"
+        # Save result to run directory
+        result_path = run_instance_dir / "result.json"
         result_path.write_text(result.to_json())
         print(f"\nResult saved to {result_path}")
+
+        # Update run summary
+        summary_path = run_dir / "summary.json"
+        if summary_path.exists():
+            summary = RunSummary.load(str(summary_path))
+        else:
+            summary = RunSummary(
+                run_name=run_dir.name,
+                model=args.model,
+                api_base=args.api_base,
+            )
+        summary.update_from_result(result)
+        summary.save(str(summary_path))
+        print(f"Summary updated: {summary_path} (total={summary.total}, passed={summary.passed}, avg={summary.avg_score:.2f})")
+
+    # Cleanup container if requested
+    if args.cleanup:
+        print(f"\nCleaning up container {container_id[:12]}...")
+        sandbox.destroy(container_id)
+        meta_path.unlink(missing_ok=True)
+        print("Container removed.")
 
 
 if __name__ == "__main__":

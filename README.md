@@ -9,6 +9,44 @@ SKILL.md ──→ Claude API ──→ Instance Dir ──→ Docker Build ─�
  (技能定义)    (synthesize)    (任务产物)       (沙箱环境)     (多轮交互)    (自动评分)
 ```
 
+## 环境配置
+
+### 前置依赖
+
+- Python >= 3.12
+- Docker
+- [uv](https://docs.astral.sh/uv/) (Python 包管理器)
+- vLLM 或任何 OpenAI-compatible API (模型服务)
+
+### 安装 uv
+
+```bash
+# Linux / macOS
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 或通过 pip
+pip install uv
+```
+
+### 初始化项目
+
+```bash
+# 克隆项目后，在项目根目录执行：
+uv sync
+```
+
+`uv sync` 会根据 `pyproject.toml` 和 `uv.lock` 自动创建虚拟环境并安装所有依赖（`anthropic`、`openai` 等）。
+
+> **注意：** 后续所有 Python 命令均通过 `uv run python` 执行，无需手动激活虚拟环境。
+
+### 环境变量
+
+合成阶段需要 Anthropic API Key：
+
+```bash
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
+
 ## 目录结构
 
 ```
@@ -19,15 +57,44 @@ anthropic-skills/           # 技能定义 (18 个)
       └── forms.md          # 子能力说明
 src/
   ├── synthesizer.py        # 读取 SKILL.md → 调 Claude API → 生成 InstanceSpec → 写磁盘
-  ├── sandbox.py            # Docker CLI 封装 (build / run / exec / cp / destroy)
+  ├── sandbox.py            # Docker CLI 封装 (build / run / exec / cp / destroy / cleanup)
   ├── evaluator.py          # 在容器内运行 eval.py，解析 JSON 评分结果
-  ├── schema.py             # InstanceSpec + EvalResult 数据类
-  └── run.py                # CLI: synthesize / build / evaluate / destroy / all
+  ├── schema.py             # InstanceSpec + EvalResult + RunSummary 数据类
+  └── run.py                # CLI: synthesize / build / evaluate / destroy / cleanup / all
 agent_runner.py             # Agent 多轮交互驱动 (接 OpenAI-compatible API)
-instances/                  # 生成的任务实例
+instances/                  # 任务定义 (不可变，不含评测结果)
+results/                    # 评测结果 (按轮次组织)
+pyproject.toml              # 项目配置 & 依赖声明
+uv.lock                    # 依赖锁定文件
 ```
 
-## 流程分三步
+### 任务与结果分离
+
+`instances/` 只包含不可变的任务定义，评测结果和交互记录保存在 `results/` 下，按轮次（run）组织：
+
+```
+instances/{instance_id}/          # 任务定义 (不可变)
+├── task.json
+├── runtime/
+│   ├── Dockerfile
+│   ├── gen_inputs.py
+│   ├── setup.sh
+│   └── workspace/
+└── eval/
+    ├── eval.py
+    └── expected.json
+
+results/{run_name}/               # 一次评测轮次的所有结果
+├── summary.json                  # 当轮统计: total, passed, avg_score, 各实例得分
+├── {instance_id}/
+│   ├── result.json               # 评测结果 (passed, score, checks)
+│   └── conversation.json         # Agent 多轮交互记录
+└── ...
+```
+
+`run_name` 默认为 `{model}_{timestamp}`，可通过 `--run-dir` 指定。
+
+## 使用流程
 
 ### 1. 合成任务 (Synthesize)
 
@@ -45,19 +112,20 @@ instances/                  # 生成的任务实例
 难度分布：easy / medium / hard 均匀分配。
 
 ```bash
-python -m src.run synthesize --skill-dir anthropic-skills/pdf --num 6
+uv run python -m src.run synthesize --skill-dir anthropic-skills/pdf --num 6
 ```
 
 ### 2. 构建环境 + Agent 交互 (Build + Run)
 
 ```bash
 # 构建 Docker 镜像 + 创建容器 + 运行 gen_inputs.py + setup.sh
-python -m src.run build --instance instances/pdf_merge_easy_000
+uv run python -m src.run build --instance instances/pdf_merge_easy_000
 
-# Agent 多轮交互完成任务
-python agent_runner.py --instance instances/pdf_merge_easy_000 \
+# Agent 多轮交互完成任务 (结果保存到 results/{run_name}/)
+uv run python agent_runner.py --instance instances/pdf_merge_easy_000 \
     --api-base http://localhost:8100/v1 \
-    --model Qwen/Qwen3-8B
+    --model Qwen/Qwen3-8B \
+    --run-dir results/Qwen3-8B_round1
 ```
 
 Agent 交互流程：
@@ -77,7 +145,8 @@ System Prompt (角色 + 规则)
 ### 3. 评测 (Evaluate)
 
 ```bash
-python -m src.run evaluate --instance instances/pdf_merge_easy_000
+uv run python -m src.run evaluate --instance instances/pdf_merge_easy_000 \
+    --run-dir results/Qwen3-8B_round1
 ```
 
 `eval.py` 在容器内执行，针对 `/workspace` 检查产出。输出格式：
@@ -95,61 +164,76 @@ python -m src.run evaluate --instance instances/pdf_merge_easy_000
 }
 ```
 
-## Case: `pdf_merge_easy_000`
+### 4. 清理容器 (Cleanup)
 
-**task.json prompt:**
-> I have three PDF files (doc1.pdf, doc2.pdf, doc3.pdf) that I need to combine into a single document called 'merged_report.pdf'. Please merge them in order.
+评测完成后，清理所有 skillbench 容器：
 
-**gen_inputs.py** 生成 3 个 PDF，每个嵌入 marker (`DOC1_CONTENT_MARKER` 等)。
+```bash
+# 清理所有 skillbench 容器 + 残留的 container.json
+uv run python -m src.run cleanup
 
-**Agent 交互示例 (理想流程):**
-
-```
-[Turn 1] Model → ls /workspace
-         Output → doc1.pdf  doc2.pdf  doc3.pdf  gen_inputs.py  setup.sh
-
-[Turn 2] Model → python3 -c "
-           from pypdf import PdfReader, PdfWriter
-           writer = PdfWriter()
-           for f in ['doc1.pdf','doc2.pdf','doc3.pdf']:
-               reader = PdfReader(f)
-               for page in reader.pages:
-                   writer.add_page(page)
-           writer.write('merged_report.pdf')
-           print('Done')
-         "
-         Output → Done
-
-[Turn 3] Model → TASK_COMPLETE
+# 清理单个实例的容器
+uv run python -m src.run destroy --instance instances/pdf_merge_easy_000
 ```
 
-**eval.py 评分:**
+`agent_runner.py` 也支持 `--cleanup` 参数，在评测结束后自动清理容器：
 
-| Check | 权重 | 验证内容 |
-|-------|------|----------|
-| merged_file_exists | 30% | `merged_report.pdf` 存在 |
-| correct_page_count | 30% | 页数 == 3 |
-| all_content_present | 20% | 三个 marker 全部出现 |
-| correct_merge_order | 20% | marker 按 DOC1→DOC2→DOC3 顺序 |
+```bash
+uv run python agent_runner.py --instance instances/pdf_merge_easy_000 \
+    --api-base http://localhost:8100/v1 \
+    --model Qwen/Qwen3-8B \
+    --run-dir results/Qwen3-8B_round1 \
+    --cleanup
+```
+
+## 一键执行
+
+`all` 子命令串联合成 → 构建 → 评测 → 清理全流程（每个实例评测后自动销毁容器）：
+
+```bash
+uv run python -m src.run all --skill-dir anthropic-skills/pdf --num 6 \
+    --run-dir results/my_run
+```
+
+## CLI 参考
+
+| 命令 | 说明 |
+|------|------|
+| `uv run python -m src.run synthesize --skill-dir <dir> --num <n>` | 合成 n 个任务实例 |
+| `uv run python -m src.run build --instance <dir>` | 构建 Docker 镜像 + 创建容器 |
+| `uv run python -m src.run evaluate --instance <dir> --run-dir <dir>` | 运行评测 |
+| `uv run python -m src.run destroy --instance <dir>` | 销毁单个实例容器 |
+| `uv run python -m src.run cleanup` | 清理所有 skillbench 容器 |
+| `uv run python -m src.run all --skill-dir <dir> --num <n> --run-dir <dir>` | 全流程一键执行 |
+| `uv run python agent_runner.py --instance <dir> --api-base <url> --model <name>` | Agent 交互评测 |
 
 ## 快速开始
 
 ```bash
+# 0. 安装依赖
+uv sync
+
 # 1. 启动模型服务
 CUDA_VISIBLE_DEVICES=4 vllm serve Qwen/Qwen3-8B --port 8100 --max-model-len 8192
 
-# 2. 合成 + 构建 + Agent 交互 + 评测 (单个实例)
-python -m src.run build --instance instances/pdf_merge_easy_000
-python agent_runner.py --instance instances/pdf_merge_easy_000 \
-    --api-base http://localhost:8100/v1 --model Qwen/Qwen3-8B
-# agent_runner 会自动调用 evaluate 并输出评分
+# 2. 构建 + Agent 交互 + 评测（--cleanup 自动清理容器）
+uv run python -m src.run build --instance instances/pdf_merge_easy_000
+uv run python agent_runner.py --instance instances/pdf_merge_easy_000 \
+    --api-base http://localhost:8100/v1 --model Qwen/Qwen3-8B \
+    --run-dir results/Qwen3-8B_exp1 --cleanup
 
-# 3. 清理
-python -m src.run destroy --instance instances/pdf_merge_easy_000
+# 3. 查看当轮统计
+cat results/Qwen3-8B_exp1/summary.json
+
+# 4. 或批量清理所有残留容器
+uv run python -m src.run cleanup
 ```
 
 ## 依赖
 
-- Python 3.11+, `anthropic` SDK (合成阶段), `openai` SDK (Agent 调用)
-- Docker (沙箱)
-- vLLM 或任何 OpenAI-compatible API (模型服务)
+项目依赖在 `pyproject.toml` 中声明，由 `uv` 管理：
+
+- `anthropic >= 0.85.0` — Claude API (合成阶段)
+- `openai >= 0.29.0` — OpenAI-compatible API (Agent 调用)
+- Docker — 沙箱环境
+- vLLM 或任何 OpenAI-compatible API — 模型服务

@@ -7,49 +7,8 @@ from pathlib import Path
 
 import anthropic
 
+from .prompts import load_prompt
 from .schema import InstanceSpec
-
-SYNTHESIS_PROMPT = """You are a benchmark task synthesizer. Given a skill definition
-(used by an AI coding assistant), generate a complete task instance.
-
-## Skill Content
-
-### SKILL.md (entry point)
-{skill_md}
-
-### Referenced Files
-{references}
-
-## Your Task
-
-Generate a {difficulty} difficulty task for this skill. Output a JSON object with:
-
-1. "category": what type of operation this task tests (e.g., "merge", "extract", "create")
-2. "prompt": a realistic user request (as if typed in a terminal). Vary tone and detail level.
-3. "dockerfile": a Dockerfile with all dependencies needed. Base image: python:3.11-slim or node:20-slim.
-   Must include everything needed to run the task AND the eval.
-4. "gen_inputs_script": a Python script that, when executed, creates input files in the
-   current directory. Must be DETERMINISTIC (use fixed seeds). Embed known marker content
-   in generated files so eval can verify correctness.
-5. "setup_script": bash script to run after container starts (install extra tools, etc.)
-6. "eval_script": a Python script that takes one argument (workspace directory path),
-   checks if the task was completed correctly, and prints a JSON result:
-   {{"passed": bool, "score": float, "checks": [{{"name": str, "passed": bool, "detail": str}}]}}
-   The script must be self-contained (only use packages installed via the Dockerfile or pip-installable packages).
-7. "expected": metadata about expected outputs (filenames, key properties)
-
-## Difficulty Guidelines
-- easy: single straightforward operation, clear inputs/outputs
-- medium: multi-step operation, requires combining techniques or handling edge cases
-- hard: complex workflow, multiple tools, nuanced requirements, or unusual edge cases
-
-## Constraints
-- gen_inputs_script must produce files with verifiable marker content
-- eval_script must test concrete, objectively verifiable properties (file exists, page count,
-  text contains, data matches, etc.)
-- Dockerfile must include everything needed to run the task AND the eval
-- All output in English
-- Return ONLY the JSON object, no markdown fences or explanation"""
 
 
 def load_skill(skill_dir: str) -> dict:
@@ -133,7 +92,8 @@ def synthesize_instance(
     """Call Claude API with the synthesis prompt, parse JSON response."""
     client = anthropic.Anthropic()
 
-    prompt = SYNTHESIS_PROMPT.format(
+    prompt = load_prompt(
+        "synthesis",
         skill_md=skill_data["skill_md"],
         references=_format_references(skill_data["references"]),
         difficulty=difficulty,
@@ -156,7 +116,24 @@ def synthesize_instance(
             lines = lines[:-1]
         response_text = "\n".join(lines)
 
-    data = json.loads(response_text)
+    try:
+        data = json.loads(response_text)
+    except json.JSONDecodeError as e:
+        # Retry once on JSON parse failure (Claude sometimes returns malformed JSON)
+        print(f"  JSON parse error: {e}. Retrying...")
+        message = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=8192,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        response_text = message.content[0].text.strip()
+        if response_text.startswith("```"):
+            lines = response_text.split("\n")
+            lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            response_text = "\n".join(lines)
+        data = json.loads(response_text)
 
     instance_id = f"{skill_name}_{data['category']}_{difficulty}_{index:03d}"
 
@@ -212,6 +189,42 @@ def write_instance_dir(spec: InstanceSpec, output_dir: str = "instances") -> str
     (eval_dir / "expected.json").write_text(json.dumps(spec.expected, indent=2))
 
     return str(base)
+
+
+def fix_dockerfile(
+    dockerfile: str,
+    error_log: str,
+    gen_inputs_script: str = "",
+    setup_script: str = "",
+) -> str:
+    """Call Claude API to fix a broken Dockerfile based on build/run error logs."""
+    client = anthropic.Anthropic()
+
+    prompt = load_prompt(
+        "fix_dockerfile",
+        dockerfile=dockerfile,
+        error_log=error_log,
+        gen_inputs_script=gen_inputs_script or "(not available)",
+        setup_script=setup_script or "(not available)",
+    )
+
+    message = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=4096,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    fixed = message.content[0].text.strip()
+
+    # Strip markdown code fences if present
+    if fixed.startswith("```"):
+        lines = fixed.split("\n")
+        lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        fixed = "\n".join(lines)
+
+    return fixed
 
 
 def synthesize_skill(

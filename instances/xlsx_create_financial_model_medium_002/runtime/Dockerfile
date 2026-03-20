@@ -1,0 +1,15 @@
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y \
+    libreoffice \
+    gcc \
+    coreutils \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install pandas openpyxl numpy
+
+WORKDIR /workspace
+
+COPY gen_inputs.py /workspace/
+COPY setup.sh /workspace/
+RUN chmod +x /workspace/setup.sh

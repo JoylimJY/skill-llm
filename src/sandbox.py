@@ -1,8 +1,14 @@
 """Docker sandbox management: build, create, exec, copy, destroy."""
 
+import json
 import subprocess
 import uuid
 from pathlib import Path
+
+
+class BuildFailedError(RuntimeError):
+    """Raised when Docker build/create fails after all retry attempts."""
+    pass
 
 
 class Sandbox:
@@ -25,7 +31,7 @@ class Sandbox:
             text=True,
         )
         if result.returncode != 0:
-            raise RuntimeError(f"Docker build failed:\n{result.stderr}")
+            raise RuntimeError(f"Docker build failed:\n{result.stdout}\n{result.stderr}")
 
         return tag
 
@@ -78,7 +84,7 @@ class Sandbox:
                     capture_output=True,
                     text=True,
                 )
-                output, exit_code = self.exec(container_id, "python /workspace/gen_inputs.py")
+                output, exit_code = self.exec(container_id, "python3 /workspace/gen_inputs.py")
                 if exit_code != 0:
                     raise RuntimeError(f"gen_inputs.py failed (exit {exit_code}):\n{output}")
 
@@ -102,6 +108,64 @@ class Sandbox:
             raise
 
         return container_id
+
+    def build_with_retry(self, instance_dir: str, max_retries: int = 3) -> tuple[str, str]:
+        """Build image and create container with LLM-assisted Dockerfile repair on failure.
+
+        Returns (image_tag, container_id).
+        Raises BuildFailedError after max_retries failures.
+        """
+        from .synthesizer import fix_dockerfile
+
+        instance_dir = Path(instance_dir)
+        runtime_dir = instance_dir / "runtime"
+        dockerfile_path = runtime_dir / "Dockerfile"
+
+        # Read context files for LLM repair
+        gen_inputs_script = ""
+        setup_script = ""
+        gen_inputs_path = runtime_dir / "gen_inputs.py"
+        setup_sh_path = runtime_dir / "setup.sh"
+        if gen_inputs_path.exists():
+            gen_inputs_script = gen_inputs_path.read_text()
+        if setup_sh_path.exists():
+            setup_script = setup_sh_path.read_text()
+
+        last_error = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                print(f"  Build attempt {attempt}/{max_retries}...")
+                tag = self.build(str(instance_dir))
+                container_id = self.create(str(instance_dir))
+                return tag, container_id
+            except RuntimeError as e:
+                last_error = e
+                error_msg = str(e)
+                print(f"  Attempt {attempt} failed: {error_msg[:200]}")
+
+                if attempt < max_retries:
+                    print(f"  Requesting LLM fix for Dockerfile...")
+                    current_dockerfile = dockerfile_path.read_text()
+                    fixed_dockerfile = fix_dockerfile(
+                        dockerfile=current_dockerfile,
+                        error_log=error_msg,
+                        gen_inputs_script=gen_inputs_script,
+                        setup_script=setup_script,
+                    )
+                    dockerfile_path.write_text(fixed_dockerfile)
+                    print(f"  Dockerfile updated, retrying...")
+
+        # Update build_status in task.json
+        task_json_path = instance_dir / "task.json"
+        if task_json_path.exists():
+            task_data = json.loads(task_json_path.read_text())
+            task_data["build_status"] = "failed"
+            task_json_path.write_text(json.dumps(task_data, indent=2))
+
+        raise BuildFailedError(
+            f"Docker build/create failed after {max_retries} attempts. "
+            f"Last error: {last_error}"
+        )
 
     def exec(self, container_id: str, cmd: str, timeout: int = 120) -> tuple[str, int]:
         """Execute a command inside the container, return (output, exit_code)."""
@@ -138,3 +202,30 @@ class Sandbox:
             text=True,
             timeout=30,
         )
+
+    def list_containers(self, all: bool = True) -> list[dict]:
+        """List skillbench containers. Returns list of {id, name, status, image}."""
+        cmd = ["docker", "ps", "--filter", "name=sb-", "--format", "{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Image}}"]
+        if all:
+            cmd.insert(2, "-a")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        containers = []
+        for line in result.stdout.strip().splitlines():
+            if not line:
+                continue
+            parts = line.split("\t")
+            if len(parts) >= 4:
+                containers.append({
+                    "id": parts[0],
+                    "name": parts[1],
+                    "status": parts[2],
+                    "image": parts[3],
+                })
+        return containers
+
+    def cleanup_all(self) -> int:
+        """Stop and remove all skillbench containers. Returns number of cleaned containers."""
+        containers = self.list_containers(all=True)
+        for c in containers:
+            self.destroy(c["id"])
+        return len(containers)

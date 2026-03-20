@@ -1,44 +1,48 @@
 #!/usr/bin/env python3
-import os
+
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
-def create_test_pdf(filename, title, content_lines):
-    c = canvas.Canvas(filename, pagesize=letter)
-    width, height = letter
-    
-    # Title
-    c.setFont('Helvetica-Bold', 16)
-    c.drawString(100, height - 100, title)
-    
-    # Content lines
-    c.setFont('Helvetica', 12)
-    y_pos = height - 150
-    for line in content_lines:
-        c.drawString(100, y_pos, line)
-        y_pos -= 20
-    
-    c.save()
+# Create report1.pdf with marker content
+c = canvas.Canvas("report1.pdf", pagesize=letter)
+width, height = letter
 
-# Create three test PDFs with specific marker content
-create_test_pdf('doc1.pdf', 'Document One', [
-    'This is the first document.',
-    'Marker: DOC1_CONTENT_MARKER',
-    'Page count: 1'
-])
+# Page 1
+c.drawString(100, height - 100, "REPORT ONE - SALES DATA")
+c.drawString(100, height - 130, "Marker: SALES_2023_Q1")
+c.drawString(100, height - 160, "This is the first report containing sales data.")
+c.showPage()
 
-create_test_pdf('doc2.pdf', 'Document Two', [
-    'This is the second document.',
-    'Marker: DOC2_CONTENT_MARKER', 
-    'Contains important data.',
-    'Page count: 1'
-])
+# Page 2 
+c.drawString(100, height - 100, "REPORT ONE - PAGE TWO")
+c.drawString(100, height - 130, "Marker: REVENUE_SUMMARY")
+c.drawString(100, height - 160, "Additional sales metrics and analysis.")
+c.save()
 
-create_test_pdf('doc3.pdf', 'Document Three', [
-    'This is the third document.',
-    'Marker: DOC3_CONTENT_MARKER',
-    'Final document in series.',
-    'Page count: 1'
-])
+# Create report2.pdf with marker content
+c = canvas.Canvas("report2.pdf", pagesize=letter)
+width, height = letter
 
-print('Created test PDF files: doc1.pdf, doc2.pdf, doc3.pdf')
+# Page 1
+c.drawString(100, height - 100, "REPORT TWO - MARKETING DATA")
+c.drawString(100, height - 130, "Marker: MARKETING_2023_Q1")
+c.drawString(100, height - 160, "This is the second report with marketing metrics.")
+c.save()
+
+# Create report3.pdf with marker content
+c = canvas.Canvas("report3.pdf", pagesize=letter)
+width, height = letter
+
+# Page 1
+c.drawString(100, height - 100, "REPORT THREE - OPERATIONS")
+c.drawString(100, height - 130, "Marker: OPERATIONS_2023_Q1")
+c.drawString(100, height - 160, "This is the third report covering operations.")
+c.showPage()
+
+# Page 2
+c.drawString(100, height - 100, "REPORT THREE - CONCLUSIONS")
+c.drawString(100, height - 130, "Marker: FINAL_CONCLUSIONS")
+c.drawString(100, height - 160, "Summary and recommendations for next quarter.")
+c.save()
+
+print("Generated input PDFs: report1.pdf (2 pages), report2.pdf (1 page), report3.pdf (2 pages)")

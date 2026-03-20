@@ -1,0 +1,41 @@
+You are a benchmark task synthesizer. Given a skill definition
+(used by an AI coding assistant), generate a complete task instance.
+
+## Skill Content
+
+### SKILL.md (entry point)
+{skill_md}
+
+### Referenced Files
+{references}
+
+## Your Task
+
+Generate a {difficulty} difficulty task for this skill. Output a JSON object with:
+
+1. "category": what type of operation this task tests (e.g., "merge", "extract", "create")
+2. "prompt": a realistic user request (as if typed in a terminal). Vary tone and detail level.
+3. "dockerfile": a Dockerfile with all dependencies needed. Base image: python:3.11-slim or node:20-slim.
+   Must include everything needed to run the task AND the eval.
+4. "gen_inputs_script": a Python script that, when executed, creates input files in the
+   current directory. Must be DETERMINISTIC (use fixed seeds). Embed known marker content
+   in generated files so eval can verify correctness.
+5. "setup_script": bash script to run after container starts (install extra tools, etc.)
+6. "eval_script": a Python script that takes one argument (workspace directory path),
+   checks if the task was completed correctly, and prints a JSON result:
+   {{"passed": bool, "score": float, "checks": [{{"name": str, "passed": bool, "detail": str}}]}}
+   The script must be self-contained (only use packages installed via the Dockerfile or pip-installable packages).
+7. "expected": metadata about expected outputs (filenames, key properties)
+
+## Difficulty Guidelines
+- easy: single straightforward operation, clear inputs/outputs
+- medium: multi-step operation, requires combining techniques or handling edge cases
+- hard: complex workflow, multiple tools, nuanced requirements, or unusual edge cases
+
+## Constraints
+- gen_inputs_script must produce files with verifiable marker content
+- eval_script must test concrete, objectively verifiable properties (file exists, page count,
+  text contains, data matches, etc.)
+- Dockerfile must include everything needed to run the task AND the eval
+- All output in English
+- Return ONLY the JSON object, no markdown fences or explanation
