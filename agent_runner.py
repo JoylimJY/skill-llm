@@ -218,6 +218,11 @@ def main():
         if task_data.get("build_status") == "failed":
             print(f"Skipping {instance_id}: build_status is 'failed'")
             sys.exit(0)
+        # Skip filtered-out instances
+        filter_status = task_data.get("filter_status", "")
+        if filter_status in ("too_easy", "unsolvable"):
+            print(f"Skipping {instance_id}: filter_status is '{filter_status}'")
+            sys.exit(0)
 
     run_instance_dir = run_dir / instance_id
     run_instance_dir.mkdir(parents=True, exist_ok=True)

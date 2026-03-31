@@ -90,3 +90,21 @@ class RunSummary:
 
     def save(self, path: str):
         open(path, "w").write(self.to_json())
+
+
+@dataclass
+class FilterResult:
+    """Result from running pass@k filtering on an instance."""
+
+    instance_id: str
+    num_trials: int
+    num_passed: int
+    pass_rate: float  # simple c/n
+    verdict: str  # "kept" / "too_easy" / "unsolvable"
+    trial_scores: list[float] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict(), indent=2)

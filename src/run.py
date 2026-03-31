@@ -9,6 +9,7 @@ from pathlib import Path
 from .synthesizer import synthesize_skill, load_skill, write_instance_dir
 from .sandbox import Sandbox, BuildFailedError
 from .evaluator import evaluate, evaluate_in_container
+from .filter import filter_instance
 from .schema import InstanceSpec, RunSummary
 
 
@@ -77,6 +78,11 @@ def cmd_evaluate(args):
         task_data = json.loads(task_json_path.read_text())
         if task_data.get("build_status") == "failed":
             print(f"Skipping {instance_dir}: build_status is 'failed'")
+            return
+        # Skip filtered-out instances
+        filter_status = task_data.get("filter_status", "")
+        if filter_status in ("too_easy", "unsolvable"):
+            print(f"Skipping {instance_dir}: filter_status is '{filter_status}'")
             return
 
     # Check if there's a running container
@@ -151,8 +157,76 @@ def cmd_cleanup(args):
             print(f"  Removed {meta}")
 
 
+def cmd_filter(args):
+    """Run pass@k filtering on built instances to discard too-easy or unsolvable tasks."""
+    output_dir = Path(args.output_dir)
+
+    # Collect instances to filter
+    if args.instance:
+        instance_dirs = [Path(args.instance)]
+    else:
+        # Filter all built instances in output_dir
+        instance_dirs = sorted(
+            d for d in output_dir.iterdir()
+            if d.is_dir() and (d / "task.json").exists()
+        )
+
+    kept = 0
+    too_easy = 0
+    unsolvable = 0
+    skipped = 0
+
+    for inst_dir in instance_dirs:
+        task_json_path = inst_dir / "task.json"
+        task_data = json.loads(task_json_path.read_text())
+
+        # Only filter successfully built instances
+        if task_data.get("build_status") != "success":
+            print(f"SKIP (not built): {inst_dir.name}")
+            skipped += 1
+            continue
+
+        # Skip already-filtered instances unless --force
+        if task_data.get("filter_status") and not args.force:
+            verdict = task_data["filter_status"]
+            print(f"SKIP (already filtered: {verdict}): {inst_dir.name}")
+            if verdict == "kept":
+                kept += 1
+            elif verdict == "too_easy":
+                too_easy += 1
+            else:
+                unsolvable += 1
+            continue
+
+        print(f"\n=== Filtering: {inst_dir.name} ===")
+        try:
+            result = filter_instance(
+                instance_dir=str(inst_dir),
+                api_base=args.api_base,
+                model=args.model,
+                num_trials=args.num_trials,
+                concurrency=args.concurrency,
+                verbose=True,
+            )
+
+            if result.verdict == "kept":
+                kept += 1
+            elif result.verdict == "too_easy":
+                too_easy += 1
+            else:
+                unsolvable += 1
+
+        except Exception as e:
+            print(f"  ERROR: {e}")
+            skipped += 1
+
+    total = kept + too_easy + unsolvable
+    print(f"\n=== Filter Summary ===")
+    print(f"Total filtered: {total}  Kept: {kept}  Too easy: {too_easy}  Unsolvable: {unsolvable}  Skipped: {skipped}")
+
+
 def cmd_all(args):
-    """Full pipeline: synthesize + build + evaluate all instances."""
+    """Full pipeline: synthesize + build + filter + evaluate all instances."""
     run_dir = resolve_run_dir(args)
     run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -162,22 +236,20 @@ def cmd_all(args):
     print(f"Generated {len(paths)} instances.\n")
 
     sandbox = Sandbox()
-    summary = RunSummary(run_name=run_dir.name, model="eval-only")
 
+    # Step 2: Build all instances
+    built_paths = []
     for instance_path in paths:
         instance_name = Path(instance_path).name
-        print(f"=== Processing: {instance_name} ===")
+        print(f"=== Building: {instance_name} ===")
 
-        # Skip instances with failed build_status
         task_json_path = Path(instance_path) / "task.json"
         if task_json_path.exists():
             task_data = json.loads(task_json_path.read_text())
             if task_data.get("build_status") == "failed":
-                print(f"  Skipping: build_status is 'failed'")
-                print()
+                print(f"  Skipping: build_status is 'failed'\n")
                 continue
 
-        # Step 2: Build with retry
         try:
             print("  Building (with LLM retry)...")
             tag, container_id = sandbox.build_with_retry(instance_path)
@@ -190,22 +262,68 @@ def cmd_all(args):
             task_data["build_status"] = "success"
             task_json_path.write_text(json.dumps(task_data, indent=2))
 
-            # Save container info (ephemeral, in instance dir)
+            # Destroy build container (filter will create fresh ones)
+            sandbox.destroy(container_id)
+            meta_path = Path(instance_path) / "container.json"
+            meta_path.unlink(missing_ok=True)
+
+            built_paths.append(instance_path)
+            print(f"  Build OK.\n")
+
+        except Exception as e:
+            print(f"  BUILD ERROR: {e}\n")
+
+    # Step 3: Filter (if api_base and model are provided)
+    if hasattr(args, "filter_api_base") and args.filter_api_base:
+        print(f"\n=== Step 3: Filter with {args.filter_model} ({args.filter_num_trials} trials) ===")
+        kept_paths = []
+        for instance_path in built_paths:
+            instance_name = Path(instance_path).name
+            print(f"\n--- Filtering: {instance_name} ---")
+            try:
+                result = filter_instance(
+                    instance_dir=instance_path,
+                    api_base=args.filter_api_base,
+                    model=args.filter_model,
+                    num_trials=args.filter_num_trials,
+                    concurrency=args.filter_concurrency,
+                )
+                if result.verdict == "kept":
+                    kept_paths.append(instance_path)
+                else:
+                    print(f"  FILTERED OUT: {result.verdict}")
+            except Exception as e:
+                print(f"  FILTER ERROR: {e}")
+                kept_paths.append(instance_path)  # keep on error
+
+        print(f"\nFilter: {len(kept_paths)}/{len(built_paths)} instances kept.\n")
+    else:
+        print("\n=== Step 3: Filter SKIPPED (no --filter-api-base provided) ===\n")
+        kept_paths = built_paths
+
+    # Step 4: Evaluate kept instances
+    summary = RunSummary(run_name=run_dir.name, model="eval-only")
+
+    for instance_path in kept_paths:
+        instance_name = Path(instance_path).name
+        print(f"=== Evaluating: {instance_name} ===")
+
+        try:
+            # Image already built (cached), just create a fresh container
+            container_id = sandbox.create(instance_path)
+            tag = f"skillbench-{instance_name}".lower().replace(" ", "-")
+
             meta_path = Path(instance_path) / "container.json"
             meta_path.write_text(json.dumps({"container_id": container_id, "image_tag": tag}))
 
-            # Step 3: Evaluate
-            print("  Evaluating...")
             result = evaluate_in_container(instance_path, container_id, sandbox)
 
             status = "PASS" if result.passed else "FAIL"
             print(f"  Result: [{status}] score={result.score:.2f}")
 
-            # Save result to run directory
             save_result_to_run(result, instance_path, run_dir)
             summary.update_from_result(result)
 
-            # Cleanup
             sandbox.destroy(container_id)
             meta_path.unlink(missing_ok=True)
 
@@ -247,12 +365,26 @@ def main():
     # cleanup
     subparsers.add_parser("cleanup", help="Remove all skillbench containers and stale container.json files")
 
+    # filter
+    p_filter = subparsers.add_parser("filter", help="Filter out too-easy (all pass) and unsolvable (none pass) tasks")
+    p_filter.add_argument("--instance", help="Path to a single instance directory (omit for batch mode)")
+    p_filter.add_argument("--output-dir", default="instances", help="Directory containing instances (batch mode)")
+    p_filter.add_argument("--api-base", required=True, help="vLLM/OpenAI-compatible API base URL")
+    p_filter.add_argument("--model", required=True, help="Model name for agent trials")
+    p_filter.add_argument("--num-trials", type=int, default=16, help="Number of agent trials per instance")
+    p_filter.add_argument("--concurrency", type=int, default=4, help="Number of parallel agent trials")
+    p_filter.add_argument("--force", action="store_true", help="Re-filter already filtered instances")
+
     # all
-    p_all = subparsers.add_parser("all", help="Full pipeline: synthesize + build + evaluate")
+    p_all = subparsers.add_parser("all", help="Full pipeline: synthesize + build + filter + evaluate")
     p_all.add_argument("--skill-dir", required=True, help="Path to skill directory")
     p_all.add_argument("--num", type=int, default=10, help="Number of instances to generate")
     p_all.add_argument("--output-dir", default="instances", help="Output directory")
     p_all.add_argument("--run-dir", help="Directory to save results (default: results/run_{timestamp})")
+    p_all.add_argument("--filter-api-base", help="API base URL for filter agent (omit to skip filtering)")
+    p_all.add_argument("--filter-model", default="Qwen3.5-27B", help="Model for filter agent trials")
+    p_all.add_argument("--filter-num-trials", type=int, default=16, help="Number of filter trials per instance")
+    p_all.add_argument("--filter-concurrency", type=int, default=4, help="Parallel filter trials")
 
     args = parser.parse_args()
 
@@ -262,6 +394,7 @@ def main():
         "evaluate": cmd_evaluate,
         "destroy": cmd_destroy,
         "cleanup": cmd_cleanup,
+        "filter": cmd_filter,
         "all": cmd_all,
     }
     commands[args.command](args)
