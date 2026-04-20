@@ -1,0 +1,67 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+
+def normalize(text):
+    try:
+        text = text.lower()
+        text = re.sub(r"\s+", " ", text)
+        text = re.sub(r"[^a-z0-9\s]", "", text)
+        return text.strip()
+    except Exception:
+        return ""
+
+
+def main():
+    checks = []
+    try:
+        workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(".")
+    except Exception as e:
+        result = {"passed": False, "score": 0.0, "checks": [{"name": "workspace_arg", "passed": False, "detail": f"invalid workspace arg: {e}"}]}
+        print(json.dumps(result))
+        return
+
+    output_path = workspace / "output.txt"
+    try:
+        exists = output_path.exists()
+        checks.append({"name": "output_exists", "passed": exists, "detail": "output.txt present" if exists else "output.txt missing"})
+    except Exception as e:
+        checks.append({"name": "output_exists", "passed": False, "detail": f"error checking existence: {e}"})
+
+    try:
+        content = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
+        norm = normalize(content)
+        has_marker = "cafe4242" in norm
+        checks.append({"name": "marker_preserved", "passed": has_marker, "detail": "marker found" if has_marker else "marker missing or altered"})
+    except Exception as e:
+        checks.append({"name": "marker_preserved", "passed": False, "detail": f"error reading output: {e}"})
+
+    try:
+        content = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
+        norm = normalize(content)
+        bad_phrases = ["great question", "in todays digital age", "crucial role", "vibrant hub", "seamless experience", "the future looks bright"]
+        removed = sum(1 for p in bad_phrases if p not in norm)
+        passed = removed >= 5
+        checks.append({"name": "ai_phrases_removed", "passed": passed, "detail": f"{removed}/{len(bad_phrases)} target phrases removed"})
+    except Exception as e:
+        checks.append({"name": "ai_phrases_removed", "passed": False, "detail": f"error analyzing phrasing: {e}"})
+
+    try:
+        content = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
+        lines = [ln.strip() for ln in content.splitlines() if ln.strip()]
+        passed = len(lines) >= 2
+        checks.append({"name": "non_trivial_revision", "passed": passed, "detail": f"{len(lines)} non-empty lines"})
+    except Exception as e:
+        checks.append({"name": "non_trivial_revision", "passed": False, "detail": f"error checking structure: {e}"})
+
+    passed_count = sum(1 for c in checks if c.get("passed"))
+    score = passed_count / len(checks) if checks else 0.0
+    result = {"passed": passed_count == len(checks) and len(checks) > 0, "score": score, "checks": checks}
+    print(json.dumps(result))
+
+
+if __name__ == "__main__":
+    main()

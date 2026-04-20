@@ -1,0 +1,195 @@
+import json
+import os
+from pathlib import Path
+
+
+def safe_read_text(path):
+    try:
+        return Path(path).read_text(encoding='utf-8', errors='replace')
+    except Exception as e:
+        return None, str(e)
+
+
+def normalize(s):
+    try:
+        return ''.join(ch.lower() for ch in s if ch.isalnum() or ch.isspace())
+    except Exception:
+        return ''
+
+
+def find_number(text, labels):
+    try:
+        low = text.lower()
+        for label in labels:
+            idx = low.find(label.lower())
+            if idx >= 0:
+                snippet = text[idx:idx + 120]
+                import re
+                m = re.search(r'([-+]?[0-9]*\.?[0-9]+)', snippet)
+                if m:
+                    return float(m.group(1))
+    except Exception:
+        return None
+    return None
+
+
+def main(workspace_dir):
+    checks = []
+    ws = Path(workspace_dir)
+    report_txt = ws / 'tokenguard_summary.txt'
+    report_json = ws / 'tokenguard_summary.json'
+    session_path = ws / '.tokenguard' / 'session.json'
+    limit_path = ws / '.tokenguard' / 'limit.json'
+    marker_path = ws / 'marker_tokenguard_seed.txt'
+
+    # Check 1: output txt exists
+    try:
+        exists = report_txt.exists()
+        checks.append({
+            'name': 'summary_txt_exists',
+            'passed': bool(exists),
+            'detail': 'tokenguard_summary.txt found' if exists else 'tokenguard_summary.txt is missing'
+        })
+    except Exception as e:
+        checks.append({'name': 'summary_txt_exists', 'passed': False, 'detail': f'error checking file existence: {e}'})
+
+    # Check 2: output json exists
+    try:
+        exists = report_json.exists()
+        checks.append({
+            'name': 'summary_json_exists',
+            'passed': bool(exists),
+            'detail': 'tokenguard_summary.json found' if exists else 'tokenguard_summary.json is missing'
+        })
+    except Exception as e:
+        checks.append({'name': 'summary_json_exists', 'passed': False, 'detail': f'error checking file existence: {e}'})
+
+    # Load source data
+    session = None
+    limit = None
+    session_err = None
+    limit_err = None
+    try:
+        if session_path.exists():
+            session = json.loads(session_path.read_text(encoding='utf-8'))
+        else:
+            session_err = 'missing session.json'
+    except Exception as e:
+        session_err = str(e)
+    try:
+        if limit_path.exists():
+            limit = json.loads(limit_path.read_text(encoding='utf-8'))
+        else:
+            limit_err = 'missing limit.json'
+    except Exception as e:
+        limit_err = str(e)
+
+    expected_limit = 25.0
+    expected_spent = 13.75
+    expected_remaining = 11.25
+    expected_warning_pct = 0.8
+    expected_entries = 4
+    expected_top = 6.0
+
+    # Check 3: text includes key values
+    try:
+        txt = report_txt.read_text(encoding='utf-8', errors='replace') if report_txt.exists() else ''
+        norm = normalize(txt)
+        required_phrases = ['current limit', 'total spent', 'remaining budget', 'warning threshold', 'log entries']
+        phrase_ok = all(normalize(p) in norm for p in required_phrases)
+        num_ok = True
+        for val in [expected_limit, expected_spent, expected_remaining, expected_warning_pct * 100, expected_entries, expected_top]:
+            if str(int(val)) in txt:
+                continue
+        # flexible numeric checks
+        limit_found = find_number(txt, ['current limit', 'limit'])
+        spent_found = find_number(txt, ['total spent', 'spent'])
+        remaining_found = find_number(txt, ['remaining budget', 'remaining'])
+        entries_found = find_number(txt, ['log entries', 'entries'])
+        top_found = find_number(txt, ['top', 'most expensive'])
+        details = []
+        details.append(f'phrases={phrase_ok}')
+        details.append(f'limit={limit_found}')
+        details.append(f'spent={spent_found}')
+        details.append(f'remaining={remaining_found}')
+        details.append(f'entries={entries_found}')
+        details.append(f'top={top_found}')
+        passed = phrase_ok and (
+            limit_found is not None and abs(limit_found - expected_limit) < 0.2 and
+            spent_found is not None and abs(spent_found - expected_spent) < 0.2 and
+            remaining_found is not None and abs(remaining_found - expected_remaining) < 0.2 and
+            entries_found is not None and abs(entries_found - expected_entries) < 1.0 and
+            top_found is not None and abs(top_found - expected_top) < 0.2
+        )
+        checks.append({'name': 'summary_txt_content', 'passed': passed, 'detail': '; '.join(details)})
+    except Exception as e:
+        checks.append({'name': 'summary_txt_content', 'passed': False, 'detail': f'error reading/parsing txt: {e}'})
+
+    # Check 4: json structure and values
+    try:
+        data = json.loads(report_json.read_text(encoding='utf-8', errors='replace')) if report_json.exists() else {}
+        core_keys = ['current_limit', 'total_spent', 'remaining_budget', 'warning_threshold', 'entry_count', 'top_entries']
+        has_keys = all(k in data for k in core_keys)
+        vals_ok = False
+        if has_keys:
+            try:
+                vals_ok = (
+                    abs(float(data.get('current_limit', -1)) - expected_limit) < 0.2 and
+                    abs(float(data.get('total_spent', -1)) - expected_spent) < 0.2 and
+                    abs(float(data.get('remaining_budget', -1)) - expected_remaining) < 0.2 and
+                    abs(float(data.get('warning_threshold', -1)) - expected_warning_pct) < 0.01 and
+                    int(data.get('entry_count', -1)) == expected_entries and
+                    isinstance(data.get('top_entries', []), list) and len(data.get('top_entries', [])) >= 3
+                )
+            except Exception:
+                vals_ok = False
+        checks.append({'name': 'summary_json_content', 'passed': bool(has_keys and vals_ok), 'detail': f'has_keys={has_keys}; vals_ok={vals_ok}'})
+    except Exception as e:
+        checks.append({'name': 'summary_json_content', 'passed': False, 'detail': f'error reading/parsing json: {e}'})
+
+    # Check 5: top 3 entries roughly correct and ordered
+    try:
+        data = json.loads(report_json.read_text(encoding='utf-8', errors='replace')) if report_json.exists() else {}
+        top_entries = data.get('top_entries', []) if isinstance(data, dict) else []
+        amounts = []
+        for item in top_entries[:3]:
+            try:
+                amounts.append(float(item.get('amount')))
+            except Exception:
+                amounts.append(None)
+        ordered = all(amounts[i] is not None and amounts[i] >= amounts[i+1] for i in range(len(amounts)-1)) if len(amounts) >= 2 else False
+        correct_top = any(a is not None and abs(a - 6.0) < 0.2 for a in amounts)
+        checks.append({'name': 'top_entries_order', 'passed': bool(ordered and correct_top), 'detail': f'amounts={amounts}'})
+    except Exception as e:
+        checks.append({'name': 'top_entries_order', 'passed': False, 'detail': f'error checking top entries: {e}'})
+
+    # Check 6: marker file still present to validate deterministic inputs
+    try:
+        exists = marker_path.exists()
+        marker_ok = False
+        detail = 'missing marker file'
+        if exists:
+            txt = marker_path.read_text(encoding='utf-8', errors='replace')
+            marker_ok = ('TOKENGUARD-SEED-2025-04-18' in txt) and ('SESSION-ENTRIES=4' in txt)
+            detail = 'marker content verified' if marker_ok else 'marker content mismatch'
+        checks.append({'name': 'input_marker', 'passed': bool(exists and marker_ok), 'detail': detail})
+    except Exception as e:
+        checks.append({'name': 'input_marker', 'passed': False, 'detail': f'error checking marker: {e}'})
+
+    passed_count = sum(1 for c in checks if c.get('passed'))
+    total = len(checks) if checks else 1
+    result = {
+        'passed': passed_count == total,
+        'score': passed_count / total,
+        'checks': checks
+    }
+    print(json.dumps(result, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    import sys
+    try:
+        workspace = sys.argv[1] if len(sys.argv) > 1 else '.'
+    except Exception:
+        workspace = '.'
+    main(workspace)

@@ -1,0 +1,72 @@
+import json
+import os
+import re
+from pathlib import Path
+
+
+def norm(text):
+    return re.sub(r'[^a-z0-9]+', ' ', str(text).lower()).strip()
+
+
+def fuzzy_contains(text, needles):
+    ntext = norm(text)
+    return any(norm(n) in ntext for n in needles)
+
+
+def read_text(path):
+    try:
+        return Path(path).read_text(encoding='utf-8', errors='ignore')
+    except Exception as e:
+        return None, str(e)
+
+
+def main():
+    import sys
+    workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+    checks = []
+
+    output_path = workspace / 'output.json'
+    try:
+        if not output_path.exists():
+            checks.append({'name': 'output_exists', 'passed': False, 'detail': 'output.json is missing'})
+        else:
+            checks.append({'name': 'output_exists', 'passed': True, 'detail': 'output.json exists'})
+    except Exception as e:
+        checks.append({'name': 'output_exists', 'passed': False, 'detail': f'Error checking output existence: {e}'})
+
+    data = None
+    if output_path.exists():
+        try:
+            data = json.loads(output_path.read_text(encoding='utf-8', errors='ignore'))
+            checks.append({'name': 'valid_json', 'passed': True, 'detail': 'output.json parses as JSON'})
+        except Exception as e:
+            checks.append({'name': 'valid_json', 'passed': False, 'detail': f'Could not parse output.json: {e}'})
+
+    try:
+        if isinstance(data, dict):
+            prompt_text = str(data.get('prompt', ''))
+            passed = fuzzy_contains(prompt_text, ['subscription', 'monthly', 'consulting', 'projection', 'payment flow'])
+            checks.append({'name': 'prompt_content', 'passed': passed, 'detail': 'Prompt includes expected revenue-model elements' if passed else 'Prompt appears too different from expected scope'})
+        else:
+            checks.append({'name': 'prompt_content', 'passed': False, 'detail': 'No valid JSON object to inspect prompt content'})
+    except Exception as e:
+        checks.append({'name': 'prompt_content', 'passed': False, 'detail': f'Error inspecting prompt content: {e}'})
+
+    try:
+        if isinstance(data, dict):
+            category_ok = norm(data.get('category', '')) in {'create', 'extract', 'merge'}
+            checks.append({'name': 'category_present', 'passed': category_ok, 'detail': 'Category is present and reasonable' if category_ok else 'Category missing or unexpected'})
+        else:
+            checks.append({'name': 'category_present', 'passed': False, 'detail': 'No valid JSON object to inspect category'})
+    except Exception as e:
+        checks.append({'name': 'category_present', 'passed': False, 'detail': f'Error inspecting category: {e}'})
+
+    total = len(checks)
+    passed = sum(1 for c in checks if c['passed'])
+    score = passed / total if total else 0.0
+    result = {'passed': passed == total and total > 0, 'score': score, 'checks': checks}
+    print(json.dumps(result, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    main()

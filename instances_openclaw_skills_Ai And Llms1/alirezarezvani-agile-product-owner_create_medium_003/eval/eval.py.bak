@@ -1,0 +1,115 @@
+from pathlib import Path
+import json
+import os
+import re
+import sys
+
+
+def safe_read(path: Path):
+    try:
+        return path.read_text(encoding='utf-8')
+    except Exception as e:
+        return None, f'Could not read {path.name}: {e}'
+
+
+def normalize(text: str) -> str:
+    try:
+        return re.sub(r'[^a-z0-9]+', ' ', text.lower()).strip()
+    except Exception:
+        return ''
+
+
+def fuzzy_contains(text: str, needles):
+    nt = normalize(text)
+    return all(normalize(n) in nt for n in needles)
+
+
+def main():
+    checks = []
+    workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+
+    expected_files = [
+        'epic_breakdown.txt',
+        'prioritized_backlog.txt',
+        'sprint_plan.txt',
+    ]
+
+    for filename in expected_files:
+        path = workspace / filename
+        try:
+            exists = path.exists()
+            detail = 'exists' if exists else 'missing'
+            checks.append({'name': f'file_exists_{filename}', 'passed': bool(exists), 'detail': detail})
+        except Exception as e:
+            checks.append({'name': f'file_exists_{filename}', 'passed': False, 'detail': f'error checking existence: {e}'})
+
+    # Epic breakdown content
+    try:
+        text, err = safe_read(workspace / 'epic_breakdown.txt')
+        if err:
+            checks.append({'name': 'epic_breakdown_readable', 'passed': False, 'detail': err})
+        else:
+            passed = fuzzy_contains(text, ['epic', 'export', 'persona']) and (
+                'acceptance criteria' in normalize(text) or 'given when then' in normalize(text)
+            )
+            checks.append({'name': 'epic_breakdown_content', 'passed': passed, 'detail': 'contains epic/export/persona and acceptance criteria' if passed else 'missing required elements'})
+    except Exception as e:
+        checks.append({'name': 'epic_breakdown_content', 'passed': False, 'detail': f'exception: {e}'})
+
+    # Backlog content
+    try:
+        text, err = safe_read(workspace / 'prioritized_backlog.txt')
+        if err:
+            checks.append({'name': 'prioritized_backlog_readable', 'passed': False, 'detail': err})
+        else:
+            has_priority = any(p in normalize(text) for p in ['critical', 'high', 'medium', 'low'])
+            has_story_points = bool(re.search(r'\b(?:1|2|3|5|8|13)\s*pts?\b', text, flags=re.I))
+            passed = has_priority and has_story_points
+            checks.append({'name': 'prioritized_backlog_content', 'passed': passed, 'detail': 'includes priority levels and story points' if passed else 'missing priority or points'})
+    except Exception as e:
+        checks.append({'name': 'prioritized_backlog_content', 'passed': False, 'detail': f'exception: {e}'})
+
+    # Sprint plan content
+    try:
+        text, err = safe_read(workspace / 'sprint_plan.txt')
+        if err:
+            checks.append({'name': 'sprint_plan_readable', 'passed': False, 'detail': err})
+        else:
+            ntext = normalize(text)
+            has_capacity = '28' in ntext and ('pto' in ntext or 'availability' in ntext)
+            has_two_week = '2 week' in ntext or 'two week' in ntext or 'sprint' in ntext
+            has_commitment = 'committed' in ntext and 'stretch' in ntext
+            passed = has_capacity and has_two_week and has_commitment
+            checks.append({'name': 'sprint_plan_content', 'passed': passed, 'detail': 'mentions capacity, 2-week sprint, committed and stretch work' if passed else 'missing planning details'})
+    except Exception as e:
+        checks.append({'name': 'sprint_plan_content', 'passed': False, 'detail': f'exception: {e}'})
+
+    # Marker usage in at least one produced file
+    try:
+        any_marker = False
+        for filename in expected_files:
+            p = workspace / filename
+            if p.exists():
+                try:
+                    content = p.read_text(encoding='utf-8')
+                    if 'report export' in content.lower() or 'export' in content.lower():
+                        any_marker = True
+                        break
+                except Exception:
+                    pass
+        checks.append({'name': 'semantic_alignment', 'passed': any_marker, 'detail': 'output references export initiative' if any_marker else 'output does not clearly reference initiative'})
+    except Exception as e:
+        checks.append({'name': 'semantic_alignment', 'passed': False, 'detail': f'exception: {e}'})
+
+    total = len(checks)
+    passed_count = sum(1 for c in checks if c.get('passed'))
+    score = passed_count / total if total else 0.0
+    result = {'passed': passed_count == total, 'score': score, 'checks': checks}
+    print(json.dumps(result, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except Exception as e:
+        print(json.dumps({'passed': False, 'score': 0.0, 'checks': [{'name': 'fatal', 'passed': False, 'detail': f'unhandled exception: {e}'}]}, ensure_ascii=False))

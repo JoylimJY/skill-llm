@@ -1,0 +1,110 @@
+import json, os, re
+from pathlib import Path
+
+workspace = Path(__import__('sys').argv[1]) if len(__import__('sys').argv) > 1 else Path('.')
+checks = []
+
+def add_check(name, passed, detail):
+    checks.append({"name": name, "passed": bool(passed), "detail": detail})
+
+try:
+    files = list(workspace.glob('*'))
+except Exception as e:
+    files = []
+    add_check('workspace_access', False, f'Could not access workspace: {e}')
+
+# Check 1: required output files exist
+try:
+    required = ['backlog_refined.md', 'sprint_plan.md', 'velocity_summary.md']
+    missing = [f for f in required if not (workspace / f).exists()]
+    add_check('required_files_exist', len(missing) == 0, 'Missing: ' + ', '.join(missing) if missing else 'All required files found.')
+except Exception as e:
+    add_check('required_files_exist', False, f'Error checking files: {e}')
+
+# Load input data safely
+backlog = {}
+try:
+    bp = workspace / 'backlog.json'
+    backlog = json.loads(bp.read_text(encoding='utf-8')) if bp.exists() else {}
+except Exception as e:
+    add_check('input_backlog_readable', False, f'Could not read backlog.json: {e}')
+
+try:
+    notes = (workspace / 'notes.txt').read_text(encoding='utf-8', errors='replace') if (workspace / 'notes.txt').exists() else ''
+except Exception as e:
+    notes = ''
+    add_check('input_notes_readable', False, f'Could not read notes.txt: {e}')
+
+# Helper functions
+
+def norm(s):
+    try:
+        return re.sub(r'[^a-z0-9]+', ' ', str(s).lower()).strip()
+    except Exception:
+        return ''
+
+def contains_fuzzy(text, phrase):
+    try:
+        return norm(phrase) in norm(text)
+    except Exception:
+        return False
+
+# Check 2: refined backlog contains sorted top items and markers
+try:
+    text = (workspace / 'backlog_refined.md').read_text(encoding='utf-8', errors='replace') if (workspace / 'backlog_refined.md').exists() else ''
+    top_ids = ['US-101', 'US-102', 'US-106', 'US-109']
+    found_ids = sum(1 for i in top_ids if contains_fuzzy(text, i))
+    markers = ['MARKER-FILTER-PERSIST', 'MARKER-EXPORT-CSV', 'MARKER-DASH-SEARCH', 'MARKER-EXPORT-ERROR']
+    found_markers = sum(1 for m in markers if contains_fuzzy(text, m))
+    add_check('backlog_refined_content', found_ids >= 4 and found_markers >= 4, f'Found {found_ids}/4 top IDs and {found_markers}/4 markers.')
+except Exception as e:
+    add_check('backlog_refined_content', False, f'Error reading backlog_refined.md: {e}')
+
+# Check 3: sprint plan has committed/stretch and capacity math
+try:
+    text = (workspace / 'sprint_plan.md').read_text(encoding='utf-8', errors='replace') if (workspace / 'sprint_plan.md').exists() else ''
+    required_phrases = ['sprint capacity', 'committed', 'stretch', 'sprint goal']
+    phrase_hits = sum(1 for p in required_phrases if contains_fuzzy(text, p))
+    has_capacity = bool(re.search(r'2[45-9]|[3-9]\d', text))
+    add_check('sprint_plan_structure', phrase_hits >= 4 and has_capacity, f'Phrase hits={phrase_hits}/4; capacity-like number present={has_capacity}.')
+except Exception as e:
+    add_check('sprint_plan_structure', False, f'Error reading sprint_plan.md: {e}')
+
+# Check 4: velocity summary mentions calculated capacity and reliability
+try:
+    text = (workspace / 'velocity_summary.md').read_text(encoding='utf-8', errors='replace') if (workspace / 'velocity_summary.md').exists() else ''
+    required = ['average velocity', 'availability factor', 'adjusted capacity', 'commitment reliability']
+    hits = sum(1 for p in required if contains_fuzzy(text, p))
+    add_check('velocity_summary_content', hits >= 3, f'Found {hits}/4 required concepts.')
+except Exception as e:
+    add_check('velocity_summary_content', False, f'Error reading velocity_summary.md: {e}')
+
+# Check 5: committed points should not exceed 85% of adjusted capacity by a forgiving margin
+try:
+    text = (workspace / 'sprint_plan.md').read_text(encoding='utf-8', errors='replace') if (workspace / 'sprint_plan.md').exists() else ''
+    nums = [int(x) for x in re.findall(r'\b\d+\b', text)]
+    # Try to infer capacity from input if available
+    av = int(backlog.get('average_velocity', 0) or 0)
+    af = float(backlog.get('availability_factor', 0) or 0)
+    capacity = av * af if av and af else 0
+    committed = 0
+    for item in backlog.get('items', []):
+        if contains_fuzzy(text, item.get('id', '')) and contains_fuzzy(text, 'committed'):
+            committed += int(item.get('points', 0) or 0)
+    threshold = capacity * 0.85 if capacity else None
+    ok = True
+    detail = 'Could not compute.'
+    if threshold is not None and committed:
+        ok = committed <= threshold + 1.0
+        detail = f'Committed={committed}, threshold≈{threshold:.1f}.'
+    else:
+        ok = False
+        detail = 'Insufficient data to verify committed capacity.'
+    add_check('capacity_constraint', ok, detail)
+except Exception as e:
+    add_check('capacity_constraint', False, f'Error checking capacity: {e}')
+
+passed_count = sum(1 for c in checks if c['passed'])
+score = passed_count / len(checks) if checks else 0.0
+result = {"passed": passed_count == len(checks), "score": score, "checks": checks}
+print(json.dumps(result, ensure_ascii=False))

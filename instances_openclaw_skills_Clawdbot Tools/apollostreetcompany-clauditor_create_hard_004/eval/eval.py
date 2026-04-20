@@ -1,0 +1,116 @@
+import json
+import os
+from pathlib import Path
+
+
+def safe_read_text(path):
+    """Always returns (content, error) tuple."""
+    try:
+        return Path(path).read_text(encoding='utf-8', errors='ignore'), None
+    except Exception as e:
+        return None, str(e)
+
+
+def safe_json(path):
+    """Always returns (data, error) tuple."""
+    try:
+        content = Path(path).read_text(encoding='utf-8', errors='ignore')
+        return json.loads(content), None
+    except Exception as e:
+        return None, str(e)
+
+
+def normalize(s):
+    return ''.join(ch.lower() for ch in s if ch.isalnum()) if isinstance(s, str) else ''
+
+
+def main(workspace):
+    ws = Path(workspace)
+    checks = []
+
+    def add_check(name, passed, detail):
+        checks.append({'name': name, 'passed': bool(passed), 'detail': detail})
+
+    # Check required files exist
+    expected_files = ['install_notes.txt', 'workflow.csv', 'task_data.json', 'reference.png', 'reference.pdf', 'manifest.json']
+    existing = []
+    missing = []
+    try:
+        for f in expected_files:
+            if (ws / f).exists():
+                existing.append(f)
+            else:
+                missing.append(f)
+        add_check('required_files_present', len(missing) == 0, f"present={existing}; missing={missing}")
+    except Exception as e:
+        add_check('required_files_present', False, f'error={e}')
+
+    # Check text markers in install_notes.txt
+    try:
+        txt, err = safe_read_text(ws / 'install_notes.txt')
+        if err is not None:
+            add_check('text_markers', False, f'read_error={err}')
+        else:
+            wanted = ['clauditor_marker_alpha', 'clauditor_marker_beta']
+            found = [w for w in wanted if w in txt.lower()]
+            add_check('text_markers', len(found) == len(wanted), f'found={found}')
+    except Exception as e:
+        add_check('text_markers', False, f'error={e}')
+
+    # Check JSON markers in task_data.json
+    try:
+        data, err = safe_json(ws / 'task_data.json')
+        if err is not None:
+            add_check('json_markers', False, f'parse_error={err}')
+        elif data is None:
+            add_check('json_markers', False, f'parse_error=invalid json')
+        else:
+            markers = data.get('markers', []) if isinstance(data, dict) else []
+            normed = [normalize(m) for m in markers]
+            ok = any('jsonmarkera' == m for m in normed) and any('jsonmarkerb' == m for m in normed)
+            add_check('json_markers', ok, f'markers={markers}')
+    except Exception as e:
+        add_check('json_markers', False, f'error={e}')
+
+    # Check CSV markers in workflow.csv
+    try:
+        csv_text, err = safe_read_text(ws / 'workflow.csv')
+        if err is not None:
+            add_check('csv_markers', False, f'read_error={err}')
+        else:
+            lower = csv_text.lower()
+            wanted = ['csv_marker_x', 'csv_marker_y', 'csv_marker_z']
+            found = [w for w in wanted if w in lower]
+            add_check('csv_markers', len(found) == len(wanted), f'found={found}')
+    except Exception as e:
+        add_check('csv_markers', False, f'error={e}')
+
+    # Check manifest.json structure
+    try:
+        manifest, err = safe_json(ws / 'manifest.json')
+        if err is not None:
+            add_check('manifest_valid', False, f'parse_error={err}')
+        elif manifest is None:
+            add_check('manifest_valid', False, f'parse_error=invalid json')
+        else:
+            files = manifest.get('files', []) if isinstance(manifest, dict) else []
+            markers = manifest.get('required_markers', []) if isinstance(manifest, dict) else []
+            ok = all(isinstance(x, str) for x in files) and all(isinstance(x, str) for x in markers)
+            add_check('manifest_valid', ok, f'file_count={len(files)}; marker_count={len(markers)}')
+    except Exception as e:
+        add_check('manifest_valid', False, f'error={e}')
+
+    # Calculate final score
+    try:
+        total = len(checks)
+        passed = sum(1 for c in checks if c['passed'])
+        score = passed / total if total else 0.0
+        result = {'passed': passed == total, 'score': score, 'checks': checks}
+        print(json.dumps(result))
+    except Exception:
+        print(json.dumps({'passed': False, 'score': 0.0, 'checks': checks}))
+
+
+if __name__ == '__main__':
+    import sys
+    main(sys.argv[1] if len(sys.argv) > 1 else '.')

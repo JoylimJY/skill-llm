@@ -1,0 +1,113 @@
+import json
+import sys
+from pathlib import Path
+
+
+def safe_read(path: Path):
+    try:
+        return path.read_text(encoding='utf-8')
+    except Exception as e:
+        return None, str(e)
+
+
+def normalize(text: str) -> str:
+    import re
+    return re.sub(r'[^a-z0-9]+', ' ', text.lower()).strip()
+
+
+def main():
+    workspace = Path(sys.argv[1])
+    checks = []
+
+    # Check 1: output directory exists
+    try:
+        passed = (workspace / 'output').exists()
+        checks.append({
+            'name': 'output directory exists',
+            'passed': passed,
+            'detail': 'output directory found' if passed else 'output directory missing'
+        })
+    except Exception as e:
+        checks.append({'name': 'output directory exists', 'passed': False, 'detail': f'error: {e}'})
+
+    # Check 2: input markers file exists and contains marker content
+    try:
+        path = workspace / 'input' / 'markers.json'
+        if not path.exists():
+            checks.append({'name': 'input markers present', 'passed': False, 'detail': 'input/markers.json missing'})
+        else:
+            try:
+                data = json.loads(path.read_text(encoding='utf-8'))
+                passed = all(k in data for k in ['session_id', 'person_name', 'project_name'])
+                checks.append({
+                    'name': 'input markers present',
+                    'passed': passed,
+                    'detail': 'marker keys present' if passed else 'marker keys missing'
+                })
+            except Exception as e:
+                checks.append({'name': 'input markers present', 'passed': False, 'detail': f'parse error: {e}'})
+    except Exception as e:
+        checks.append({'name': 'input markers present', 'passed': False, 'detail': f'error: {e}'})
+
+    # Check 3: output file has evidence of remembered fact / lesson / entity
+    try:
+        candidates = [workspace / 'output' / 'memory_demo.txt', workspace / 'output' / 'result.txt']
+        found = None
+        content = None
+        err = ''
+        for p in candidates:
+            if p.exists():
+                found = p
+                try:
+                    content = p.read_text(encoding='utf-8')
+                except Exception as e:
+                    err = str(e)
+                break
+        if found is None:
+            checks.append({'name': 'memory output content', 'passed': False, 'detail': 'no expected output file found'})
+        elif content is None:
+            checks.append({'name': 'memory output content', 'passed': False, 'detail': f'could not read {found.name}: {err}'})
+        else:
+            n = normalize(content)
+            needed = ['remembered fact', 'learned lesson', 'tracked entity']
+            passed = all(normalize(t) in n for t in needed)
+            checks.append({
+                'name': 'memory output content',
+                'passed': passed,
+                'detail': 'contains required memory sections' if passed else 'missing one or more required memory sections'
+            })
+    except Exception as e:
+        checks.append({'name': 'memory output content', 'passed': False, 'detail': f'error: {e}'})
+
+    # Check 4: output mentions the marker ORCHID-42 or project/person terms
+    try:
+        p = workspace / 'output' / 'memory_demo.txt'
+        if not p.exists():
+            checks.append({'name': 'marker propagated', 'passed': False, 'detail': 'memory_demo.txt missing'})
+        else:
+            try:
+                content = p.read_text(encoding='utf-8')
+                n = normalize(content)
+                passed = ('orchid 42' in n) or ('ava chen' in n) or ('orchid' in n)
+                checks.append({
+                    'name': 'marker propagated',
+                    'passed': passed,
+                    'detail': 'marker content detected' if passed else 'marker content not detected'
+                })
+            except Exception as e:
+                checks.append({'name': 'marker propagated', 'passed': False, 'detail': f'read error: {e}'})
+    except Exception as e:
+        checks.append({'name': 'marker propagated', 'passed': False, 'detail': f'error: {e}'})
+
+    total = len(checks)
+    passed_count = sum(1 for c in checks if c.get('passed'))
+    result = {
+        'passed': passed_count == total,
+        'score': passed_count / total if total else 0.0,
+        'checks': checks,
+    }
+    print(json.dumps(result))
+
+
+if __name__ == '__main__':
+    main()

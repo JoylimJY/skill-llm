@@ -1,0 +1,78 @@
+import json
+import os
+from pathlib import Path
+
+
+def safe_read(path):
+    try:
+        return Path(path).read_text(encoding='utf-8', errors='replace')
+    except Exception as e:
+        return None, str(e)
+
+
+def normalize(s):
+    return ''.join(ch.lower() for ch in s if ch.isalnum())
+
+
+def main(workspace_dir):
+    checks = []
+    ws = Path(workspace_dir)
+
+    def add_check(name, passed, detail):
+        checks.append({'name': name, 'passed': bool(passed), 'detail': detail})
+
+    try:
+        expected_files = [
+            ws / 'output.txt',
+            ws / 'summary.md',
+        ]
+        for p in expected_files:
+            add_check(f'file_exists_{p.name}', p.exists(), f"{p.name} {'found' if p.exists() else 'missing'}")
+
+        output_text = ''
+        if (ws / 'output.txt').exists():
+            try:
+                output_text = (ws / 'output.txt').read_text(encoding='utf-8', errors='replace')
+            except Exception as e:
+                add_check('read_output', False, f'Could not read output.txt: {e}')
+        else:
+            add_check('read_output', False, 'output.txt missing')
+
+        summary_text = ''
+        if (ws / 'summary.md').exists():
+            try:
+                summary_text = (ws / 'summary.md').read_text(encoding='utf-8', errors='replace')
+            except Exception as e:
+                add_check('read_summary', False, f'Could not read summary.md: {e}')
+        else:
+            add_check('read_summary', False, 'summary.md missing')
+
+        markers = ['marker_alpha', 'marker_beta', 'marker_gamma', 'marker_pdf_delta']
+        combined = normalize(output_text + '\n' + summary_text)
+        for m in markers:
+            add_check(f'contains_{m}', m in combined, f"Marker {m} {'present' if m in combined else 'absent'}")
+
+        # Fuzzy structure checks
+        out_norm = normalize(output_text)
+        sum_norm = normalize(summary_text)
+        add_check('mentions_ranked_options', 'rankedoptions' in out_norm or 'rankedoptions' in sum_norm, 'Checks for ranked options phrase in either output file')
+        add_check('mentions_final_recommendation', 'finalrecommendation' in out_norm or 'finalrecommendation' in sum_norm, 'Checks for final recommendation phrase in either output file')
+        add_check('mentions_export', 'export' in out_norm or 'export' in sum_norm, 'Checks for export mention in either output file')
+
+    except Exception as e:
+        add_check('unexpected_error', False, f'Unexpected evaluator error: {e}')
+
+    passed_count = sum(1 for c in checks if c['passed'])
+    total = len(checks) if checks else 1
+    result = {
+        'passed': passed_count == total,
+        'score': passed_count / total,
+        'checks': checks,
+    }
+    print(json.dumps(result, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    import sys
+    workspace = sys.argv[1] if len(sys.argv) > 1 else '.'
+    main(workspace)

@@ -1,0 +1,40 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+checks = []
+
+def add_check(name, passed, detail):
+    checks.append({"name": name, "passed": bool(passed), "detail": detail})
+
+workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+
+try:
+    target = workspace / 'quickstart.md'
+    if not target.exists():
+        add_check('file_exists', False, 'quickstart.md is missing')
+    else:
+        try:
+            text = target.read_text(encoding='utf-8', errors='replace')
+            normalized = re.sub(r'\s+', ' ', text.lower())
+            has_description = 'tokenguard' in normalized and ('usage guide' in normalized or 'beginner' in normalized or 'quickstart' in normalized)
+            has_steps = len(re.findall(r'\bstep\s*\d+\b', normalized)) >= 2 or ('1.' in text and '2.' in text and '3.' in text)
+            has_model = 'gemini-3-flash' in normalized
+            has_actions = all(action in normalized for action in ['proceed', 'wait', 'block'])
+            has_json = '{' in text and '}' in text and 'status' in normalized
+            under_limit = len(text.split()) <= 250
+            add_check('content_description', has_description, 'mentions TokenGuard and a beginner-friendly usage guide' if has_description else 'missing clear description')
+            add_check('content_steps', has_steps, 'contains a 3-step Python usage example' if has_steps else 'missing step structure')
+            add_check('content_model_actions', has_model and has_actions, 'mentions gemini-3-flash and proceed/wait/block actions' if has_model and has_actions else 'missing required model/actions')
+            add_check('content_json_example', has_json, 'includes a small JSON status example' if has_json else 'missing JSON status example')
+            add_check('word_limit', under_limit, f'word count is {len(text.split())}' if text else 'could not count words')
+        except Exception as e:
+            add_check('file_readable', False, f'could not read quickstart.md: {e}')
+except Exception as e:
+    add_check('eval_error', False, f'unexpected error: {e}')
+
+passed = all(c['passed'] for c in checks) if checks else False
+score = sum(1 for c in checks if c['passed']) / len(checks) if checks else 0.0
+print(json.dumps({"passed": passed, "score": score, "checks": checks}, ensure_ascii=False))

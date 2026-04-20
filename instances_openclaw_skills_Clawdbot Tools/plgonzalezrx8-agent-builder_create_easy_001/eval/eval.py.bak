@@ -1,0 +1,82 @@
+import json
+import re
+import sys
+from pathlib import Path
+
+
+def safe_read(path):
+    try:
+        return Path(path).read_text(encoding='utf-8')
+    except Exception as e:
+        return None, str(e)
+
+
+def norm(s):
+    return re.sub(r'[^a-z0-9]+', '', (s or '').lower())
+
+
+def check_file_exists(workspace, name):
+    p = Path(workspace) / name
+    try:
+        return p.exists(), f'found' if p.exists() else 'missing'
+    except Exception as e:
+        return False, str(e)
+
+
+def main():
+    workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+    checks = []
+
+    files = {
+        'IDENTITY.md': ['harbor', 'ai assistant'],
+        'SOUL.md': ['explicit permission', 'destructive', 'outbound messages'],
+        'AGENTS.md': ['stop on cli usage errors', 'memory', 'delegation'],
+        'USER.md': [],
+        'HEARTBEAT.md': ['checklist'],
+    }
+
+    for fname, required_bits in files.items():
+        try:
+            exists = (workspace / fname).exists()
+            detail = 'exists' if exists else 'missing'
+            passed = exists
+            if exists and required_bits:
+                text, err = safe_read(workspace / fname)
+                if text is None:
+                    passed = False
+                    detail = f'read error: {err}'
+                else:
+                    low = text.lower()
+                    missing = [b for b in required_bits if b.lower() not in low]
+                    passed = len(missing) == 0
+                    detail = 'contains required markers' if passed else f'missing markers: {missing}'
+            checks.append({'name': fname, 'passed': passed, 'detail': detail})
+        except Exception as e:
+            checks.append({'name': fname, 'passed': False, 'detail': str(e)})
+
+    try:
+        hb = workspace / 'HEARTBEAT.md'
+        passed = False
+        detail = 'missing'
+        if hb.exists():
+            text, err = safe_read(hb)
+            if text is None:
+                detail = f'read error: {err}'
+            else:
+                # allow either empty/comment-only or a tiny checklist
+                lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+                passed = True
+                detail = f'{len(lines)} non-empty lines'
+        checks.append({'name': 'heartbeat_tiny_or_empty', 'passed': passed, 'detail': detail})
+    except Exception as e:
+        checks.append({'name': 'heartbeat_tiny_or_empty', 'passed': False, 'detail': str(e)})
+
+    total = len(checks)
+    passed_n = sum(1 for c in checks if c['passed'])
+    score = passed_n / total if total else 0.0
+    result = {'passed': passed_n == total, 'score': score, 'checks': checks}
+    print(json.dumps(result, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    main()

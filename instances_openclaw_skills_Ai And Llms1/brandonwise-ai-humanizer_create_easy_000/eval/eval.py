@@ -1,0 +1,96 @@
+import json
+import re
+import sys
+from pathlib import Path
+
+
+def normalize(text: str) -> str:
+    text = text.lower()
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"[^a-z0-9\s]", "", text)
+    return text.strip()
+
+
+def safe_read(path: Path):
+    try:
+        return path.read_text(encoding='utf-8'), None
+    except Exception as e:
+        return None, str(e)
+
+
+def main():
+    checks = []
+    workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(".")
+
+    try:
+        out_path = workspace / 'output.txt'
+        if out_path.exists():
+            content, err = safe_read(out_path)
+            if content is None:
+                checks.append({'name': 'output readable', 'passed': False, 'detail': f'could not read output.txt: {err}'})
+            else:
+                n = normalize(content)
+                bad_phrases = [
+                    'in todays digital age',
+                    'serves as a testament',
+                    'paradigm shift',
+                    'crucial role',
+                    'seamless integration',
+                    'leverage robust tools',
+                    'harness the power',
+                    'the future looks bright'
+                ]
+                passed = True
+                found = []
+                for p in bad_phrases:
+                    if p in n:
+                        passed = False
+                        found.append(p)
+                checks.append({'name': 'removed ai-ish phrases', 'passed': passed, 'detail': 'remaining flagged phrases: ' + (', '.join(found) if found else 'none')})
+        else:
+            checks.append({'name': 'output exists', 'passed': False, 'detail': 'output.txt is missing'})
+    except Exception as e:
+        checks.append({'name': 'output exists', 'passed': False, 'detail': f'error checking output.txt: {e}'})
+
+    try:
+        out_path = workspace / 'output.txt'
+        if out_path.exists():
+            content, err = safe_read(out_path)
+            if content is None:
+                checks.append({'name': 'meaning preserved', 'passed': False, 'detail': f'could not read output.txt: {err}'})
+            else:
+                n = normalize(content)
+                keywords = ['remote work', 'technology', 'flexibility']
+                present = [k for k in keywords if k in n]
+                passed = len(present) >= 2
+                checks.append({'name': 'meaning preserved', 'passed': passed, 'detail': 'found keywords: ' + (', '.join(present) if present else 'none')})
+        else:
+            checks.append({'name': 'meaning preserved', 'passed': False, 'detail': 'output.txt is missing'})
+    except Exception as e:
+        checks.append({'name': 'meaning preserved', 'passed': False, 'detail': f'error checking meaning: {e}'})
+
+    try:
+        marker = workspace / 'marker.txt'
+        content, err = safe_read(marker)
+        if content is None:
+            checks.append({'name': 'input marker present', 'passed': False, 'detail': f'could not read marker.txt: {err}'})
+        else:
+            n = normalize(content)
+            marker_patterns = ['remote_work', 'humanize', 'easy', 'create']
+            passed = any(p in n for p in marker_patterns)
+            checks.append({'name': 'input marker present', 'passed': passed, 'detail': 'marker detected' if passed else 'marker missing'})
+    except Exception as e:
+        checks.append({'name': 'input marker present', 'passed': False, 'detail': f'error checking marker: {e}'})
+
+    try:
+        total = len(checks)
+        passed_count = sum(1 for c in checks if c.get('passed'))
+        score = passed_count / total if total else 0.0
+        result = {'passed': passed_count == total and total > 0, 'score': score, 'checks': checks}
+        print(json.dumps(result))
+    except Exception:
+        print(json.dumps({'passed': False, 'score': 0.0, 'checks': checks}))
+
+
+if __name__ == '__main__':
+    main()

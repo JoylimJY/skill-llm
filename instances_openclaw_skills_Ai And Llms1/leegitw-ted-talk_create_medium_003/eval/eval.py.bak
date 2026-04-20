@@ -1,0 +1,64 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+checks = []
+
+
+def add_check(name, passed, detail):
+    checks.append({"name": name, "passed": bool(passed), "detail": str(detail)})
+
+
+def safe_read(path):
+    try:
+        return path.read_text(encoding='utf-8')
+    except Exception as e:
+        return None, str(e)
+
+try:
+    out_path = workspace / 'output.txt'
+    if not out_path.exists():
+        add_check('output_exists', False, 'output.txt is missing')
+        content = None
+    else:
+        content, err = safe_read(out_path)
+        if content is None:
+            add_check('output_exists', False, f'could not read output.txt: {err}')
+        else:
+            add_check('output_exists', True, 'output.txt found and readable')
+
+    if content:
+        lowered = content.lower()
+        def fuzzy_has(*phrases):
+            return all(p.lower() in lowered for p in phrases)
+
+        add_check('has_ted_title', bool(re.search(r'(?i)^##\s*ted talk', content, re.M)), 'contains a TED Talk style heading')
+        add_check('has_opening_section', 'opening' in lowered, 'mentions an Opening section')
+        add_check('has_setup_section', 'setup' in lowered, 'mentions a Setup section')
+        add_check('has_problem_section', 'problem' in lowered, 'mentions a Problem section')
+        add_check('has_core_concept_section', 'core concept' in lowered or 'core idea' in lowered, 'mentions a Core Concept section')
+        add_check('has_examples_section', 'real-world examples' in lowered or 'examples' in lowered, 'mentions an Examples section')
+        add_check('has_implications_section', 'broader implications' in lowered or 'implications' in lowered, 'mentions an Implications section')
+        add_check('has_closing_section', 'closing' in lowered, 'mentions a Closing section')
+        add_check('has_qa_section', 'q&a' in lowered or 'q & a' in lowered or 'questions and answers' in lowered, 'mentions a Q&A section')
+
+        marker_hits = 0
+        for marker in ['decision latency', 'learning loops', 'three-stage rhythm', 'capture uncertainty', 'validate assumptions', 'codify the pattern']:
+            if marker in lowered:
+                marker_hits += 1
+        add_check('uses_input_markers', marker_hits >= 3, f'found {marker_hits} expected context markers')
+
+        word_count = len(re.findall(r'\w+', content))
+        add_check('reasonable_length', word_count >= 300, f'word count is {word_count}, expected at least 300')
+    else:
+        for name in ['has_ted_title','has_opening_section','has_setup_section','has_problem_section','has_core_concept_section','has_examples_section','has_implications_section','has_closing_section','has_qa_section','uses_input_markers','reasonable_length']:
+            add_check(name, False, 'not evaluated because output.txt was missing or unreadable')
+except Exception as e:
+    add_check('eval_exception', False, f'unexpected evaluator error: {e}')
+
+passed = all(c['passed'] for c in checks)
+score = (sum(1 for c in checks if c['passed']) / len(checks)) if checks else 0.0
+print(json.dumps({"passed": passed, "score": score, "checks": checks}, ensure_ascii=False))

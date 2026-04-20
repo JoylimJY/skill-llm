@@ -1,0 +1,84 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+
+def normalize(text: str) -> str:
+    text = text.lower()
+    text = re.sub(r'[^a-z0-9\s]', ' ', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+
+def main():
+    checks = []
+    workspace = sys.argv[1] if len(sys.argv) > 1 else '.'
+    out_path = Path(workspace) / 'output.txt'
+    marker_path = Path(workspace) / 'skill_marker.txt'
+
+    # Check 1: output.txt exists
+    try:
+        exists = out_path.exists()
+        checks.append({
+            'name': 'output_exists',
+            'passed': exists,
+            'detail': 'output.txt found' if exists else 'output.txt is missing'
+        })
+    except Exception as e:
+        checks.append({'name': 'output_exists', 'passed': False, 'detail': f'error checking file existence: {e}'})
+
+    # Check 2: output has 5 bullet-like lines and mentions key ideas
+    try:
+        if out_path.exists():
+            content = out_path.read_text(encoding='utf-8', errors='replace')
+            lines = [ln.strip() for ln in content.splitlines() if ln.strip()]
+            bullet_lines = [ln for ln in lines if re.match(r'^(?:[-*]|\d+[.)])\s+', ln)]
+            norm = normalize(content)
+            required_phrases = [
+                'short answers',
+                'batch tool calls',
+                'dont read files you dont need',
+                'skip narration',
+                'think like youre paying the bill'
+            ]
+            phrase_hits = sum(1 for p in required_phrases if p in norm)
+            passed = len(bullet_lines) >= 5 and phrase_hits >= 3
+            detail = f'{len(bullet_lines)} bullet-like lines, {phrase_hits} key phrase hits'
+            checks.append({'name': 'content_quality', 'passed': passed, 'detail': detail})
+        else:
+            checks.append({'name': 'content_quality', 'passed': False, 'detail': 'output.txt missing, cannot inspect content'})
+    except Exception as e:
+        checks.append({'name': 'content_quality', 'passed': False, 'detail': f'error reading output.txt: {e}'})
+
+    # Check 3: marker file exists and contains marker text
+    try:
+        if marker_path.exists():
+            marker = marker_path.read_text(encoding='utf-8', errors='replace')
+            passed = 'SMART_CONTEXT_MARKER' in marker
+            checks.append({
+                'name': 'marker_present',
+                'passed': passed,
+                'detail': 'marker found' if passed else 'marker content missing'
+            })
+        else:
+            checks.append({'name': 'marker_present', 'passed': False, 'detail': 'skill_marker.txt is missing'})
+    except Exception as e:
+        checks.append({'name': 'marker_present', 'passed': False, 'detail': f'error reading marker file: {e}'})
+
+    try:
+        passed_count = sum(1 for c in checks if c.get('passed'))
+        total = len(checks) if checks else 1
+        result = {
+            'passed': passed_count == total,
+            'score': passed_count / total,
+            'checks': checks
+        }
+        print(json.dumps(result, ensure_ascii=False))
+    except Exception:
+        print('{"passed":false,"score":0.0,"checks":[{"name":"fatal","passed":false,"detail":"unexpected evaluator error"}]}')
+
+
+if __name__ == '__main__':
+    main()

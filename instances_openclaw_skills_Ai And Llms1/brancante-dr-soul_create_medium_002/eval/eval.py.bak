@@ -1,0 +1,136 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+
+def norm_text(s):
+    try:
+        return re.sub(r'[^a-z0-9]+', '', s.lower())
+    except Exception:
+        return ''
+
+
+def safe_read(path):
+    try:
+        return Path(path).read_text(encoding='utf-8')
+    except Exception as e:
+        return None, str(e)
+
+
+def main():
+    checks = []
+    workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+
+    def add_check(name, passed, detail):
+        checks.append({'name': name, 'passed': bool(passed), 'detail': str(detail)})
+
+    try:
+        pres_path = workspace / 'memory' / 'soul' / 'prescription.json'
+        if pres_path.exists():
+            raw, err = safe_read(pres_path)
+            if raw is None:
+                add_check('prescription_exists', False, f'Could not read prescription.json: {err}')
+                data = None
+            else:
+                try:
+                    data = json.loads(raw)
+                    add_check('prescription_exists', True, 'prescription.json exists and is valid JSON')
+                except Exception as e:
+                    data = None
+                    add_check('prescription_exists', False, f'Invalid JSON: {e}')
+        else:
+            data = None
+            add_check('prescription_exists', False, 'memory/soul/prescription.json is missing')
+    except Exception as e:
+        data = None
+        add_check('prescription_exists', False, f'Unexpected error: {e}')
+
+    try:
+        summary_path = workspace / 'prescription_summary.txt'
+        if summary_path.exists():
+            raw, err = safe_read(summary_path)
+            if raw is None:
+                add_check('summary_exists', False, f'Could not read summary: {err}')
+            else:
+                txt = norm_text(raw)
+                ok = 'morrow' in txt and 'ari' in txt and ('soul' in txt or 'prescription' in txt)
+                add_check('summary_exists', ok, 'summary file present and mentions key personalized terms' if ok else 'summary missing expected personalized content')
+        else:
+            add_check('summary_exists', False, 'prescription_summary.txt is missing')
+    except Exception as e:
+        add_check('summary_exists', False, f'Unexpected error: {e}')
+
+    try:
+        crons_path = workspace / 'cron_commands.sh'
+        if crons_path.exists():
+            raw, err = safe_read(crons_path)
+            if raw is None:
+                add_check('cron_commands_exists', False, f'Could not read cron_commands.sh: {err}')
+            else:
+                txt = norm_text(raw)
+                required = ['soulcortisolmorning', 'souldopamine', 'souloxytocin', 'soulserotonin', 'soulmelatonin', 'souldadrenaline', 'soulgaba', 'soultestosterone', 'soulendorphins', 'soulprolactin', 'soulempathy', 'souljournalevening']
+                found = sum(1 for r in required if r in txt)
+                ok = found >= 8
+                add_check('cron_commands_exists', ok, f'Found {found}/{len(required)} expected cron identifiers' if raw else 'empty cron command file')
+        else:
+            add_check('cron_commands_exists', False, 'cron_commands.sh is missing')
+    except Exception as e:
+        add_check('cron_commands_exists', False, f'Unexpected error: {e}')
+
+    try:
+        if isinstance(data, dict):
+            hp = data.get('hormonal_profile', {})
+            schedules = data.get('pill_schedule', [])
+            cascades = data.get('cascade_rules', [])
+            daily = data.get('daily_point_target')
+            journal = data.get('souljournal_schedule')
+
+            ok_keys = all(k in data for k in ['hormonal_profile', 'pill_schedule', 'cascade_rules', 'daily_point_target', 'souljournal_schedule'])
+            add_check('required_top_level_keys', ok_keys, 'All required top-level keys present' if ok_keys else 'Missing one or more required keys')
+
+            hp_ok = isinstance(hp, dict) and len(hp) >= 11 and any('cortisol' in norm_text(k) for k in hp.keys()) and any('empathy' in norm_text(k) for k in hp.keys())
+            add_check('hormonal_profile_shape', hp_ok, 'Hormonal profile looks complete' if hp_ok else 'Hormonal profile incomplete or malformed')
+
+            sched_ok = isinstance(schedules, list) and len(schedules) >= 8
+            add_check('pill_schedule_count', sched_ok, f'Pill schedule count = {len(schedules) if isinstance(schedules, list) else 0}' )
+
+            cascade_ok = isinstance(cascades, list) and len(cascades) >= 5
+            add_check('cascade_rules_count', cascade_ok, f'Cascade rules count = {len(cascades) if isinstance(cascades, list) else 0}' )
+
+            daily_ok = isinstance(daily, (int, float)) and daily > 0
+            add_check('daily_target_valid', daily_ok, f'Daily target = {daily}' if daily_ok else 'Daily target missing or invalid')
+
+            journal_ok = isinstance(journal, str) and (':00' in journal or re.search(r'\b\d{1,2}:\d{2}\b', journal))
+            add_check('journal_schedule_valid', journal_ok, f'SoulJournal schedule = {journal}' if journal_ok else 'SoulJournal schedule missing or malformed')
+        else:
+            add_check('required_top_level_keys', False, 'Could not validate prescription structure because JSON was missing/invalid')
+            add_check('hormonal_profile_shape', False, 'No valid JSON to inspect')
+            add_check('pill_schedule_count', False, 'No valid JSON to inspect')
+            add_check('cascade_rules_count', False, 'No valid JSON to inspect')
+            add_check('daily_target_valid', False, 'No valid JSON to inspect')
+            add_check('journal_schedule_valid', False, 'No valid JSON to inspect')
+    except Exception as e:
+        add_check('structure_validation', False, f'Unexpected error: {e}')
+
+    try:
+        marker_file = workspace / 'memory' / 'interview_marker.txt'
+        raw, err = safe_read(marker_file)
+        if raw is None:
+            add_check('input_marker_present', False, f'Could not read marker file: {err}')
+        else:
+            ok = 'SOUL-PACK-77' in raw
+            add_check('input_marker_present', ok, 'Marker content verified' if ok else 'Expected marker not found')
+    except Exception as e:
+        add_check('input_marker_present', False, f'Unexpected error: {e}')
+
+    passed_count = sum(1 for c in checks if c['passed'])
+    total = len(checks)
+    score = passed_count / total if total else 0.0
+    result = {'passed': passed_count == total, 'score': score, 'checks': checks}
+    print(json.dumps(result, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    main()

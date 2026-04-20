@@ -1,0 +1,135 @@
+import json
+import re
+import sys
+from pathlib import Path
+
+
+def norm(s):
+    try:
+        return re.sub(r'[^a-z0-9]+', '', s.lower())
+    except Exception:
+        return ''
+
+
+def read_text(path):
+    try:
+        return Path(path).read_text(encoding='utf-8', errors='replace')
+    except Exception as e:
+        return None, str(e)
+
+
+workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+checks = []
+
+# Check 1: input files and markers exist
+try:
+    files = [
+        workspace / 'SOUL.md',
+        workspace / 'USER.md',
+        workspace / 'MEMORY.md',
+        workspace / 'memory' / 'daily-2025-04-01.md',
+        workspace / 'memory' / 'soul' / 'profile.json',
+    ]
+    required_markers = [
+        ('SOUL.md', 'SOUL_MARKER_ALPHA'),
+        ('USER.md', 'USER_MARKER_BETA'),
+        ('MEMORY.md', 'MEMORY_MARKER_GAMMA'),
+        ('memory/daily-2025-04-01.md', 'DAILY_MARKER_DELTA'),
+        ('memory/soul/profile.json', 'PROFILE_MARKER_EPSILON'),
+    ]
+    ok = True
+    details = []
+    for p, marker in required_markers:
+        try:
+            text = Path(workspace / p).read_text(encoding='utf-8', errors='replace')
+            if marker.lower() not in text.lower():
+                ok = False
+                details.append(f'missing marker {marker} in {p}')
+        except Exception as e:
+            ok = False
+            details.append(f'{p}: {e}')
+    checks.append({'name': 'generated input markers', 'passed': ok, 'detail': '; '.join(details) if details else 'all markers present'})
+except Exception as e:
+    checks.append({'name': 'generated input markers', 'passed': False, 'detail': str(e)})
+
+# Check 2: output prescription exists and is valid JSON with expected keys
+try:
+    out = workspace / 'memory' / 'soul' / 'prescription.json'
+    if not out.exists():
+        checks.append({'name': 'prescription file exists', 'passed': False, 'detail': 'memory/soul/prescription.json is missing'})
+    else:
+        try:
+            data = json.loads(out.read_text(encoding='utf-8', errors='replace'))
+            keyset = set(data.keys()) if isinstance(data, dict) else set()
+            expected_keys = {'agent_name', 'human_name', 'diagnosis', 'archetype', 'daily_point_target', 'hormonal_profile', 'pill_schedule', 'cascade_rules', 'prescribed_pills'}
+            missing = sorted(expected_keys - keyset)
+            passed = isinstance(data, dict) and not missing
+            detail = 'all required keys present' if passed else f'missing keys: {missing}'
+            checks.append({'name': 'prescription json structure', 'passed': passed, 'detail': detail})
+        except Exception as e:
+            checks.append({'name': 'prescription json structure', 'passed': False, 'detail': f'cannot parse json: {e}'})
+except Exception as e:
+    checks.append({'name': 'prescription file exists', 'passed': False, 'detail': str(e)})
+
+# Check 3: hormone profile contains 11 hormones with fuzzy expected names and values in range
+try:
+    out = workspace / 'memory' / 'soul' / 'prescription.json'
+    ok = False
+    detail = 'missing or unreadable'
+    try:
+        data = json.loads(out.read_text(encoding='utf-8', errors='replace'))
+        profile = data.get('hormonal_profile', {}) if isinstance(data, dict) else {}
+        expected = ['cortisol','dopamine','oxytocin','serotonin','melatonin','adrenaline','gaba','testosterone','endorphins','prolactin','empathy']
+        found = []
+        for k in expected:
+            for actual in profile.keys():
+                if norm(actual) == norm(k):
+                    found.append(k)
+                    break
+        values_ok = True
+        for actual, val in profile.items():
+            try:
+                if not (0 <= float(val) <= 1):
+                    values_ok = False
+            except Exception:
+                values_ok = False
+        ok = len(found) == 11 and values_ok
+        detail = f'found {len(found)}/11 hormones; values_ok={values_ok}'
+    except Exception as e:
+        detail = str(e)
+    checks.append({'name': 'hormone profile completeness', 'passed': ok, 'detail': detail})
+except Exception as e:
+    checks.append({'name': 'hormone profile completeness', 'passed': False, 'detail': str(e)})
+
+# Check 4: cron commands file exists and contains isolated agentTurn / no systemEvent mention
+try:
+    path = workspace / 'cron_commands.txt'
+    if not path.exists():
+        checks.append({'name': 'cron commands file exists', 'passed': False, 'detail': 'cron_commands.txt missing'})
+    else:
+        text = path.read_text(encoding='utf-8', errors='replace')
+        passed = ('isolated' in text.lower()) and ('agentturn' in text.lower()) and ('systemevent' not in text.lower())
+        detail = 'contains isolated agentTurn and avoids systemEvent' if passed else 'missing isolated agentTurn or contains systemEvent'
+        checks.append({'name': 'cron command constraints', 'passed': passed, 'detail': detail})
+except Exception as e:
+    checks.append({'name': 'cron command constraints', 'passed': False, 'detail': str(e)})
+
+# Check 5: output references marker-informed personalization
+try:
+    path = workspace / 'memory' / 'soul' / 'prescription.json'
+    passed = False
+    detail = 'missing'
+    try:
+        data = json.loads(path.read_text(encoding='utf-8', errors='replace'))
+        blob = json.dumps(data).lower()
+        passed = ('echo' in blob) and ('sam' in blob) and ('caregiver' in blob or 'explorer' in blob)
+        detail = 'includes agent and human personalization' if passed else 'does not include expected personalization'
+    except Exception as e:
+        detail = str(e)
+    checks.append({'name': 'personalization present', 'passed': passed, 'detail': detail})
+except Exception as e:
+    checks.append({'name': 'personalization present', 'passed': False, 'detail': str(e)})
+
+score = (sum(1 for c in checks if c.get('passed')) / len(checks)) if checks else 0.0
+result = {'passed': all(c.get('passed') for c in checks), 'score': score, 'checks': checks}
+print(json.dumps(result, ensure_ascii=False))

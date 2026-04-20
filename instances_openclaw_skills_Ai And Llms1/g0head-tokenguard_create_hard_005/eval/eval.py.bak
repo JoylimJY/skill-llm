@@ -1,0 +1,92 @@
+from pathlib import Path
+import json
+import re
+import sys
+
+checks = []
+workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+
+
+def add_check(name, passed, detail):
+    checks.append({"name": name, "passed": bool(passed), "detail": str(detail)})
+
+
+def safe_read_text(path):
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except Exception as e:
+        return None, f"failed to read {path.name}: {e}"
+
+# Expected outputs
+report_txt = workspace / "tokenguard_report.txt"
+report_json = workspace / "tokenguard_report.json"
+summary_md = workspace / "tokenguard_summary.md"
+input_json = workspace / "session_input.json"
+
+# Check 1: report text exists and contains marker + key fields
+try:
+    if report_txt.exists():
+        txt = report_txt.read_text(encoding="utf-8", errors="replace")
+        norm = re.sub(r"\s+", " ", txt.lower())
+        marker_ok = "tokenguard_marker_7f3a9c" in norm
+        limit_ok = any(k in norm for k in ["limit", "current limit"])
+        spent_ok = any(k in norm for k in ["spent", "current spent"])
+        add_check("text_report", marker_ok and limit_ok and spent_ok, f"exists={True}, marker={marker_ok}, limit={limit_ok}, spent={spent_ok}")
+    else:
+        add_check("text_report", False, "tokenguard_report.txt is missing")
+except Exception as e:
+    add_check("text_report", False, f"error while checking text report: {e}")
+
+# Check 2: JSON report exists and has fuzzy-valid structure
+try:
+    if report_json.exists():
+        try:
+            data = json.loads(report_json.read_text(encoding="utf-8", errors="replace"))
+            marker_val = str(data.get("marker", ""))
+            has_marker = "tokenguard_marker_7f3a9c" in marker_val.lower()
+            has_fields = all(k in data for k in ["limit", "spent", "remaining", "entry_count", "warning"])
+            warning_ok = isinstance(data.get("warning"), (bool, str))
+            add_check("json_report", has_marker and has_fields and warning_ok, f"marker={has_marker}, fields={has_fields}, warning_type_ok={warning_ok}")
+        except Exception as e:
+            add_check("json_report", False, f"invalid JSON or parse error: {e}")
+    else:
+        add_check("json_report", False, "tokenguard_report.json is missing")
+except Exception as e:
+    add_check("json_report", False, f"error while checking json report: {e}")
+
+# Check 3: markdown summary exists and references sample input marker
+try:
+    if summary_md.exists():
+        md = summary_md.read_text(encoding="utf-8", errors="replace")
+        md_norm = re.sub(r"\s+", " ", md.lower())
+        ok = all(fragment in md_norm for fragment in ["tokenguard", "marker", "tokenguard_marker_7f3a9c"])
+        add_check("markdown_summary", ok, f"contains_required_terms={ok}")
+    else:
+        add_check("markdown_summary", False, "tokenguard_summary.md is missing")
+except Exception as e:
+    add_check("markdown_summary", False, f"error while checking markdown summary: {e}")
+
+# Check 4: input file exists and contains deterministic marker content
+try:
+    if input_json.exists():
+        try:
+            inp = json.loads(input_json.read_text(encoding="utf-8", errors="replace"))
+            marker = str(inp.get("marker", ""))
+            marker_ok = "tokenguard_marker_7f3a9c" in marker.lower()
+            entries_ok = isinstance(inp.get("entries"), list) and len(inp.get("entries", [])) >= 2
+            add_check("input_fixture", marker_ok and entries_ok, f"marker={marker_ok}, entries={entries_ok}")
+        except Exception as e:
+            add_check("input_fixture", False, f"invalid JSON or parse error: {e}")
+    else:
+        add_check("input_fixture", False, "session_input.json is missing")
+except Exception as e:
+    add_check("input_fixture", False, f"error while checking input fixture: {e}")
+
+# Compute score
+passed_count = sum(1 for c in checks if c["passed"])
+total_count = len(checks)
+score = (passed_count / total_count) if total_count else 0.0
+passed = passed_count == total_count
+
+result = {"passed": passed, "score": score, "checks": checks}
+print(json.dumps(result, ensure_ascii=False))

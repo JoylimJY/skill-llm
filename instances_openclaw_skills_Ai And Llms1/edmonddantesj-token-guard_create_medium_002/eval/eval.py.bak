@@ -1,0 +1,82 @@
+from pathlib import Path
+import json
+import re
+import sys
+
+workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+checks = []
+
+
+def add_check(name, passed, detail):
+    checks.append({'name': name, 'passed': bool(passed), 'detail': detail})
+
+
+def safe_read_text(path):
+    try:
+        return path.read_text(encoding='utf-8', errors='replace')
+    except Exception as e:
+        return None, str(e)
+
+# Check 1: summary.txt exists and contains key phrases
+try:
+    summary_path = workspace / 'summary.txt'
+    if summary_path.exists():
+        text = summary_path.read_text(encoding='utf-8', errors='replace')
+        norm = re.sub(r'[^a-z0-9]+', ' ', text.lower())
+        ok = ('duplicate' in norm) and ('quota' in norm) and ('gemini' in norm)
+        add_check('summary_exists_and_mentions_key_topics', ok, 'summary.txt found' if ok else 'summary.txt missing required themes')
+    else:
+        add_check('summary_exists_and_mentions_key_topics', False, 'summary.txt is missing')
+except Exception as e:
+    add_check('summary_exists_and_mentions_key_topics', False, f'error reading summary.txt: {e}')
+
+# Check 2: report.json exists and has expected structure
+try:
+    report_path = workspace / 'report.json'
+    if report_path.exists():
+        try:
+            data = json.loads(report_path.read_text(encoding='utf-8', errors='replace'))
+            ok = isinstance(data, dict) and 'project' in data and 'records' in data and 'duplicate_bursts' in data
+            add_check('report_exists_and_has_structure', ok, 'report.json structure looks valid' if ok else 'report.json missing required keys')
+        except Exception as e:
+            add_check('report_exists_and_has_structure', False, f'failed to parse report.json: {e}')
+    else:
+        add_check('report_exists_and_has_structure', False, 'report.json is missing')
+except Exception as e:
+    add_check('report_exists_and_has_structure', False, f'error checking report.json: {e}')
+
+# Check 3: report includes marker and correct model name approximately
+try:
+    report_path = workspace / 'report.json'
+    if report_path.exists():
+        try:
+            data = json.loads(report_path.read_text(encoding='utf-8', errors='replace'))
+            blob = json.dumps(data).lower()
+            ok = ('tg_marker_9f3a2c' in blob) and ('gemini-3-flash' in blob)
+            add_check('report_contains_marker_and_model', ok, 'marker/model present' if ok else 'marker or model missing')
+        except Exception as e:
+            add_check('report_contains_marker_and_model', False, f'parse error: {e}')
+    else:
+        add_check('report_contains_marker_and_model', False, 'report.json is missing')
+except Exception as e:
+    add_check('report_contains_marker_and_model', False, f'error: {e}')
+
+# Check 4: alert file should exist because there is a duplicate burst
+try:
+    alert_path = workspace / 'alert.txt'
+    if alert_path.exists():
+        text = alert_path.read_text(encoding='utf-8', errors='replace').lower()
+        ok = ('duplicate' in text) or ('burst' in text) or ('runaway' in text)
+        add_check('alert_created_for_duplicate_burst', ok, 'alert.txt found with alert wording' if ok else 'alert.txt does not mention duplicate burst')
+    else:
+        add_check('alert_created_for_duplicate_burst', False, 'alert.txt is missing')
+except Exception as e:
+    add_check('alert_created_for_duplicate_burst', False, f'error reading alert.txt: {e}')
+
+# Check 5: score is computed from checks
+passed_count = sum(1 for c in checks if c['passed'])
+total_count = len(checks)
+score = (passed_count / total_count) if total_count else 0.0
+passed = passed_count == total_count
+
+print(json.dumps({'passed': passed, 'score': score, 'checks': checks}, ensure_ascii=False))

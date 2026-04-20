@@ -1,0 +1,107 @@
+import json
+import os
+from pathlib import Path
+import sys
+
+
+def safe_read_text(path):
+    try:
+        return Path(path).read_text(encoding='utf-8', errors='replace')
+    except Exception as e:
+        return None, str(e)
+
+
+def main():
+    checks = []
+    workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+
+    # Check 1: marker file exists and contains marker text
+    try:
+        p = workspace / 'input_marker.txt'
+        if p.exists():
+            text = p.read_text(encoding='utf-8', errors='replace')
+            passed = 'aap-deterministic-marker-42' in text.lower()
+            detail = 'marker found' if passed else 'marker missing from input_marker.txt'
+        else:
+            passed = False
+            detail = 'input_marker.txt is missing'
+    except Exception as e:
+        passed = False
+        detail = f'error reading marker file: {e}'
+    checks.append({'name': 'marker_file', 'passed': passed, 'detail': detail})
+
+    # Check 2: summary file exists and is valid JSON with expected fields
+    try:
+        p = workspace / 'verification-summary.json'
+        if not p.exists():
+            passed = False
+            detail = 'verification-summary.json is missing'
+        else:
+            try:
+                data = json.loads(p.read_text(encoding='utf-8', errors='replace'))
+                ok = isinstance(data, dict)
+                ok = ok and 'verified' in data
+                ok = ok and 'publicId' in data
+                ok = ok and 'payload' in data
+                passed = bool(ok)
+                detail = 'summary json structure looks valid' if passed else 'summary json missing required keys'
+            except Exception as e:
+                passed = False
+                detail = f'invalid JSON in verification-summary.json: {e}'
+    except Exception as e:
+        passed = False
+        detail = f'error checking summary file: {e}'
+    checks.append({'name': 'summary_json', 'passed': passed, 'detail': detail})
+
+    # Check 3: payload contains deterministic marker in a fuzzy way
+    try:
+        p = workspace / 'verification-summary.json'
+        if not p.exists():
+            passed = False
+            detail = 'verification-summary.json missing for payload check'
+        else:
+            try:
+                data = json.loads(p.read_text(encoding='utf-8', errors='replace'))
+                payload = data.get('payload', {}) if isinstance(data, dict) else {}
+                payload_text = json.dumps(payload, sort_keys=True).lower() if isinstance(payload, (dict, list)) else str(payload).lower()
+                passed = 'aap-deterministic-marker-42' in payload_text
+                detail = 'deterministic marker present in payload' if passed else 'deterministic marker not found in payload'
+            except Exception as e:
+                passed = False
+                detail = f'payload parsing failed: {e}'
+    except Exception as e:
+        passed = False
+        detail = f'error checking payload: {e}'
+    checks.append({'name': 'payload_marker', 'passed': passed, 'detail': detail})
+
+    # Check 4: server log file exists and mentions websocket/aap
+    try:
+        candidates = [workspace / 'server.log', workspace / 'aap-server.log']
+        found = None
+        for p in candidates:
+            if p.exists():
+                found = p
+                break
+        if not found:
+            passed = False
+            detail = 'no server log file found'
+        else:
+            try:
+                text = found.read_text(encoding='utf-8', errors='replace').lower()
+                passed = ('aap' in text) and ('ws' in text or 'websocket' in text)
+                detail = f'log inspected: {found.name}' if passed else 'server log does not mention aap/websocket'
+            except Exception as e:
+                passed = False
+                detail = f'error reading server log: {e}'
+    except Exception as e:
+        passed = False
+        detail = f'error checking server log: {e}'
+    checks.append({'name': 'server_log', 'passed': passed, 'detail': detail})
+
+    score = sum(1 for c in checks if c['passed']) / len(checks) if checks else 0.0
+    result = {'passed': all(c['passed'] for c in checks), 'score': score, 'checks': checks}
+    print(json.dumps(result, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    main()

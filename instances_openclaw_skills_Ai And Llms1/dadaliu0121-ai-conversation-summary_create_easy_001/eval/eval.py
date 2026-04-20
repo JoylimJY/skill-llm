@@ -1,0 +1,108 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+checks = []
+
+
+def add_check(name, passed, detail):
+    checks.append({"name": name, "passed": bool(passed), "detail": str(detail)})
+
+
+def safe_read(path):
+    try:
+        content = Path(path).read_text(encoding='utf-8')
+        return content, None
+    except Exception as e:
+        return None, f"error reading {Path(path).name}: {e}"
+
+# Check 1: required input files exist with marker content
+try:
+    conv_path = workspace / "conversation.json"
+    marker_path = workspace / "marker.txt"
+    hist_path = workspace / "history_summary.txt"
+    files_ok = conv_path.exists() and marker_path.exists() and hist_path.exists()
+    detail = []
+    detail.append(f"conversation.json exists={conv_path.exists()}")
+    detail.append(f"marker.txt exists={marker_path.exists()}")
+    detail.append(f"history_summary.txt exists={hist_path.exists()}")
+    marker_text = ''
+    if marker_path.exists():
+        txt, err = safe_read(marker_path)
+        if err:
+            detail.append(err)
+        else:
+            marker_text = txt or ''
+            detail.append(f"marker contains marker={ 'marker_conversation_summary_easy_001' in marker_text.lower() }")
+            files_ok = files_ok and ('marker_conversation_summary_easy_001' in marker_text.lower())
+    add_check('input_files_and_marker', files_ok, '; '.join(detail))
+except Exception as e:
+    add_check('input_files_and_marker', False, f"unexpected error: {e}")
+
+# Check 2: output file exists
+try:
+    out_path = workspace / "output.json"
+    exists = out_path.exists()
+    add_check('output_exists', exists, 'output.json must exist' if exists else 'output.json is missing')
+except Exception as e:
+    add_check('output_exists', False, f"unexpected error: {e}")
+
+# Check 3: output parses as JSON and contains a summary field with non-trivial content
+summary_ok = False
+try:
+    out_path = workspace / "output.json"
+    if not out_path.exists():
+        add_check('output_json_structure', False, 'output.json missing, cannot validate JSON structure')
+    else:
+        try:
+            data = json.loads(out_path.read_text(encoding='utf-8'))
+            summary = ''
+            if isinstance(data, dict):
+                # fuzzy lookup for summary key
+                for k, v in data.items():
+                    if re.sub(r'[^a-z0-9]+', '', str(k).lower()) in ('summary', 'summaries', 'chatsummary'):
+                        summary = str(v) if v is not None else ''
+                        break
+                if not summary and 'summary' in data:
+                    summary = str(data.get('summary') or '')
+            summary_norm = re.sub(r'\s+', ' ', summary).strip()
+            summary_ok = len(summary_norm) >= 20
+            add_check('output_json_structure', summary_ok, f"summary_length={len(summary_norm)}" if summary_norm else 'summary field missing or empty')
+        except Exception as e:
+            add_check('output_json_structure', False, f"malformed JSON: {e}")
+except Exception as e:
+    add_check('output_json_structure', False, f"unexpected error: {e}")
+
+# Check 4: summary should mention key conversation themes with fuzzy matching
+try:
+    out_path = workspace / "output.json"
+    if not out_path.exists():
+        add_check('summary_theme_coverage', False, 'output.json missing')
+    else:
+        try:
+            data = json.loads(out_path.read_text(encoding='utf-8'))
+            text = ''
+            if isinstance(data, dict):
+                for k, v in data.items():
+                    if re.sub(r'[^a-z0-9]+', '', str(k).lower()) in ('summary', 'summaries', 'chatsummary'):
+                        text = str(v)
+                        break
+                if not text and 'summary' in data:
+                    text = str(data.get('summary') or '')
+            norm = re.sub(r'[^a-z0-9]+', ' ', text.lower())
+            themes = ['kyoto', 'trip', 'food', 'temple']
+            hits = sum(1 for t in themes if t in norm)
+            passed = hits >= 2
+            add_check('summary_theme_coverage', passed, f"matched_themes={hits}/4")
+        except Exception as e:
+            add_check('summary_theme_coverage', False, f"malformed JSON or unreadable summary: {e}")
+except Exception as e:
+    add_check('summary_theme_coverage', False, f"unexpected error: {e}")
+
+passed_count = sum(1 for c in checks if c['passed'])
+score = passed_count / len(checks) if checks else 0.0
+result = {"passed": passed_count == len(checks), "score": score, "checks": checks}
+print(json.dumps(result, ensure_ascii=False))

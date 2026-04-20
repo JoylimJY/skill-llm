@@ -1,0 +1,77 @@
+from pathlib import Path
+import json, sys, re
+
+checks = []
+
+def add_check(name, passed, detail):
+    checks.append({'name': name, 'passed': bool(passed), 'detail': detail})
+
+try:
+    workspace = Path(sys.argv[1])
+except Exception as e:
+    print(json.dumps({'passed': False, 'score': 0.0, 'checks': [{'name': 'argument', 'passed': False, 'detail': f'missing or invalid workspace argument: {e}'}]}))
+    raise SystemExit(0)
+
+# Check 1: expected input exists
+try:
+    gt = workspace / 'ground_truth.json'
+    if gt.exists():
+        data = json.loads(gt.read_text(encoding='utf-8'))
+        ok = all(k in data for k in ['expected_title', 'expected_balance', 'expected_alerts', 'marker'])
+        add_check('ground_truth_present', ok, 'ground_truth.json found and parsed' if ok else 'ground_truth.json missing required keys')
+    else:
+        add_check('ground_truth_present', False, 'ground_truth.json not found')
+except Exception as e:
+    add_check('ground_truth_present', False, f'error reading ground_truth.json: {e}')
+
+# Check 2: screenshot exists
+try:
+    shot = workspace / 'screenshot.png'
+    add_check('screenshot_exists', shot.exists(), 'screenshot.png found' if shot.exists() else 'screenshot.png not found')
+except Exception as e:
+    add_check('screenshot_exists', False, f'error checking screenshot.png: {e}')
+
+# Check 3: output report exists and contains marker-aware content
+try:
+    out = workspace / 'output.json'
+    if not out.exists():
+        add_check('output_report', False, 'output.json not found')
+    else:
+        try:
+            obj = json.loads(out.read_text(encoding='utf-8'))
+            title = str(obj.get('title', '')).lower()
+            balance = str(obj.get('balance', ''))
+            alerts = str(obj.get('alerts', ''))
+            marker = str(obj.get('marker', ''))
+            ok = ('finance' in title or 'dashboard' in title) and ('1284' in balance) and ('7' in alerts) and ('screenvision' in marker.lower())
+            detail = f"title={obj.get('title')}, balance={obj.get('balance')}, alerts={obj.get('alerts')}, marker={obj.get('marker')}"
+            add_check('output_report', ok, detail)
+        except Exception as e:
+            add_check('output_report', False, f'output.json malformed: {e}')
+except Exception as e:
+    add_check('output_report', False, f'error checking output.json: {e}')
+
+# Check 4: coordinates present in a forgiving way
+try:
+    out = workspace / 'output.json'
+    if out.exists():
+        obj = json.loads(out.read_text(encoding='utf-8'))
+        coords = obj.get('coordinates', {}) if isinstance(obj, dict) else {}
+        first = coords.get('first_label') if isinstance(coords, dict) else None
+        ok = False
+        detail = 'coordinates missing'
+        if isinstance(first, dict):
+            x = first.get('x')
+            y = first.get('y')
+            if isinstance(x, (int, float)) and isinstance(y, (int, float)):
+                ok = 0 <= x <= 1200 and 0 <= y <= 800
+                detail = f'first_label coordinates=({x}, {y})'
+        add_check('coordinates', ok, detail)
+    else:
+        add_check('coordinates', False, 'output.json not found')
+except Exception as e:
+    add_check('coordinates', False, f'error parsing coordinates: {e}')
+
+passed = all(c['passed'] for c in checks)
+score = sum(1 for c in checks if c['passed']) / max(1, len(checks))
+print(json.dumps({'passed': passed, 'score': score, 'checks': checks}))

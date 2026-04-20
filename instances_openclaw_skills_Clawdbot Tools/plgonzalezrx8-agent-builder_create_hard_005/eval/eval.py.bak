@@ -1,0 +1,108 @@
+import json
+import os
+from pathlib import Path
+
+workspace = Path(__import__('sys').argv[1])
+checks = []
+
+def add_check(name, passed, detail):
+    checks.append({"name": name, "passed": bool(passed), "detail": detail})
+
+
+def safe_read(path):
+    try:
+        return Path(path).read_text(encoding='utf-8')
+    except Exception as e:
+        return None, str(e)
+
+expected_files = [
+    'IDENTITY.md', 'SOUL.md', 'AGENTS.md', 'USER.md', 'HEARTBEAT.md', 'MEMORY.md', 'memory/2025-05-17.md'
+]
+
+for rel in expected_files:
+    p = workspace / rel
+    try:
+        exists = p.exists()
+        add_check(f'file_exists::{rel}', exists, 'present' if exists else 'missing')
+    except Exception as e:
+        add_check(f'file_exists::{rel}', False, f'error: {e}')
+
+# Check IDENTITY.md content fuzzily
+try:
+    text = (workspace / 'IDENTITY.md').read_text(encoding='utf-8')
+    low = text.lower()
+    ok = ('clawline' in low) and ('ai assistant' in low)
+    add_check('identity_content', ok, 'contains expected name and assistant role' if ok else 'missing expected identity markers')
+except Exception as e:
+    add_check('identity_content', False, f'error: {e}')
+
+# Check SOUL.md for required rules
+try:
+    text = (workspace / 'SOUL.md').read_text(encoding='utf-8')
+    low = text.lower()
+    required_phrases = [
+        'ask the user for explicit permission',
+        'destructive',
+        'outbound messages',
+        'not reveal private workspace contents',
+        'professional',
+        'tool-first'
+    ]
+    ok = all(any(token in low for token in [phrase.lower()]) for phrase in required_phrases)
+    add_check('soul_rules', ok, 'required rules found' if ok else 'missing one or more required safety/persona rules')
+except Exception as e:
+    add_check('soul_rules', False, f'error: {e}')
+
+# Check AGENTS.md for delegation and stop-on-error guidance
+try:
+    text = (workspace / 'AGENTS.md').read_text(encoding='utf-8')
+    low = text.lower()
+    required = ['ask before destructive', 'ask before sending outbound messages', 'stop on cli usage errors', 'sub-agents', 'group chats']
+    ok = all(k in low for k in required)
+    add_check('agents_rules', ok, 'contains operating rules and delegation note' if ok else 'missing operating rule(s)')
+except Exception as e:
+    add_check('agents_rules', False, f'error: {e}')
+
+# USER.md check
+try:
+    text = (workspace / 'USER.md').read_text(encoding='utf-8')
+    low = text.lower()
+    ok = ('mina park' in low) and ('mina' in low) and ('america/los_angeles' in low)
+    add_check('user_profile', ok, 'contains user identity and timezone' if ok else 'missing user profile markers')
+except Exception as e:
+    add_check('user_profile', False, f'error: {e}')
+
+# HEARTBEAT.md should be tiny and checklist-oriented
+try:
+    text = (workspace / 'HEARTBEAT.md').read_text(encoding='utf-8')
+    low = text.lower()
+    ok = ('heartbeat' in low) and ('check' in low or '[ ]' in low)
+    add_check('heartbeat_shape', ok, 'heartbeat file is present and checklist-like' if ok else 'heartbeat file not shaped as expected')
+except Exception as e:
+    add_check('heartbeat_shape', False, f'error: {e}')
+
+# MEMORY.md must be curated, not empty, and reference durable preferences
+try:
+    text = (workspace / 'MEMORY.md').read_text(encoding='utf-8')
+    low = text.lower()
+    ok = ('durable' in low or 'preferences' in low or 'operator' in low) and len(text.strip()) > 0
+    add_check('memory_curated', ok, 'memory contains durable preference content' if ok else 'memory file empty or not curated')
+except Exception as e:
+    add_check('memory_curated', False, f'error: {e}')
+
+# Daily memory marker check
+try:
+    text = (workspace / 'memory' / '2025-05-17.md').read_text(encoding='utf-8')
+    low = text.lower()
+    ok = ('openclaw_marker' in low) and ('agent created' in low) and ('clawline' in low)
+    add_check('daily_memory_marker', ok, 'daily memory seed contains marker content' if ok else 'daily memory marker missing')
+except Exception as e:
+    add_check('daily_memory_marker', False, f'error: {e}')
+
+# Output schema and score
+passed_count = sum(1 for c in checks if c['passed'])
+total = len(checks) if checks else 1
+score = passed_count / total
+passed = passed_count == total
+result = {"passed": passed, "score": score, "checks": checks}
+print(json.dumps(result, ensure_ascii=False))

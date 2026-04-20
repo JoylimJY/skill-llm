@@ -1,0 +1,94 @@
+import json
+import os
+import re
+from pathlib import Path
+
+
+def safe_read(path: Path):
+    try:
+        return path.read_text(encoding='utf-8')
+    except Exception as e:
+        return None, str(e)
+
+
+def normalize(text: str) -> str:
+    text = text.lower()
+    text = re.sub(r'[^a-z0-9\u0080-\uffff]+', ' ', text)
+    return re.sub(r'\s+', ' ', text).strip()
+
+
+def fuzzy_contains(text: str, needles):
+    nt = normalize(text)
+    return all(normalize(n) in nt for n in needles)
+
+
+def main():
+    import sys
+    checks = []
+    workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+
+    # Check 1: release note exists
+    note_path = workspace / 'release_note.txt'
+    try:
+        if note_path.exists():
+            content = note_path.read_text(encoding='utf-8')
+            passed = fuzzy_contains(content, ['telegram footer patch', 'dry run', 'verify', 'backup', 'rollback', 'restart', 'real telegram private chat'])
+            detail = 'release_note.txt present and includes required guidance' if passed else 'release_note.txt present but missing one or more required concepts'
+        else:
+            passed = False
+            detail = 'release_note.txt is missing'
+    except Exception as e:
+        passed = False
+        detail = f'could not read release_note.txt: {e}'
+    checks.append({'name': 'release note content', 'passed': passed, 'detail': detail})
+
+    # Check 2: verification manifest exists and references expected markers/targets
+    manifest_path = workspace / 'verification_manifest.json'
+    try:
+        if manifest_path.exists():
+            raw = manifest_path.read_text(encoding='utf-8')
+            data = json.loads(raw)
+            text = raw
+            required_markers = ['🧠 Model', '💭 Think', '📊 Context', '--dry-run', '--verify']
+            required_targets = ['agent-runner.runtime', 'reply-', 'compact-', 'pi-embedded-', 'thread-bindings-', 'model-selection-', 'auth-profiles-']
+            markers_ok = all(normalize(m) in normalize(text) for m in required_markers)
+            targets_ok = all(normalize(t) in normalize(text) for t in required_targets)
+            structure_ok = isinstance(data, dict)
+            passed = structure_ok and markers_ok and targets_ok
+            detail = 'verification_manifest.json present with expected marker and target references' if passed else 'verification_manifest.json missing required references or invalid structure'
+        else:
+            passed = False
+            detail = 'verification_manifest.json is missing'
+    except Exception as e:
+        passed = False
+        detail = f'could not parse verification_manifest.json: {e}'
+    checks.append({'name': 'verification manifest', 'passed': passed, 'detail': detail})
+
+    # Check 3: deterministic marker input files exist
+    inputs_dir = workspace / 'inputs'
+    try:
+        marker_file = inputs_dir / 'marker_strings.txt'
+        targets_file = inputs_dir / 'bundle_targets.txt'
+        boundary_file = inputs_dir / 'release_boundary.json'
+        ok = all(p.exists() for p in [marker_file, targets_file, boundary_file])
+        if ok:
+            marker_txt = marker_file.read_text(encoding='utf-8')
+            target_txt = targets_file.read_text(encoding='utf-8')
+            boundary_txt = boundary_file.read_text(encoding='utf-8')
+            ok = fuzzy_contains(marker_txt, ['🧠 Model', '💭 Think', '📊 Context']) and fuzzy_contains(target_txt, ['agent-runner.runtime', 'reply-', 'compact-']) and fuzzy_contains(boundary_txt, ['2026.3.22', 'live telegram private-chat acceptance'])
+        detail = 'deterministic inputs exist and include the embedded marker content' if ok else 'one or more generated input files are missing or malformed'
+        passed = ok
+    except Exception as e:
+        passed = False
+        detail = f'could not inspect generated inputs: {e}'
+    checks.append({'name': 'generated inputs', 'passed': passed, 'detail': detail})
+
+    total = len(checks)
+    passed_count = sum(1 for c in checks if c['passed'])
+    score = passed_count / total if total else 0.0
+    result = {'passed': passed_count == total, 'score': score, 'checks': checks}
+    print(json.dumps(result, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    main()

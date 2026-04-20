@@ -1,0 +1,98 @@
+import json
+import sys
+from pathlib import Path
+
+
+def norm(s):
+    try:
+        return ''.join(ch.lower() for ch in str(s) if ch.isalnum())
+    except Exception:
+        return ''
+
+
+def safe_load_json(path):
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        return None, f'{path.name}: {type(e).__name__}: {e}'
+
+
+def main():
+    workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+    checks = []
+
+    config_path = workspace / 'config.json'
+    state_path = workspace / 'state.json'
+    marker_path = workspace / 'notes' / 'marker.txt'
+
+    try:
+        marker_text = marker_path.read_text(encoding='utf-8')
+    except Exception as e:
+        marker_text = ''
+        checks.append({'name': 'marker file exists', 'passed': False, 'detail': f'missing or unreadable: {type(e).__name__}: {e}'})
+    else:
+        checks.append({'name': 'marker file exists', 'passed': True, 'detail': 'marker file readable'})
+
+    cfg, cfg_err = safe_load_json(config_path)
+    if cfg is None:
+        checks.append({'name': 'config.json exists and is valid', 'passed': False, 'detail': f'missing or invalid: {cfg_err}'})
+        cfg = {}
+    else:
+        checks.append({'name': 'config.json exists and is valid', 'passed': True, 'detail': 'config loaded'})
+
+    st, st_err = safe_load_json(state_path)
+    if st is None:
+        checks.append({'name': 'state.json exists and is valid', 'passed': False, 'detail': f'missing or invalid: {st_err}'})
+        st = {}
+    else:
+        checks.append({'name': 'state.json exists and is valid', 'passed': True, 'detail': 'state loaded'})
+
+    letter_ok = False
+    name_ok = False
+    timeout_ok = False
+    state_ok = False
+
+    try:
+        letter = str(cfg.get('letter', ''))
+        name = str(cfg.get('name', ''))
+        timeout = cfg.get('idle_timeout', None)
+        letter_ok = norm(letter) == 'n'
+        name_ok = 'nova' in norm(name)
+        timeout_ok = str(timeout).strip() in {'600', '600.0'}
+        detail = f'letter={letter!r}, name={name!r}, idle_timeout={timeout!r}'
+        checks.append({'name': 'config values match request', 'passed': letter_ok and name_ok and timeout_ok, 'detail': detail})
+    except Exception as e:
+        checks.append({'name': 'config values match request', 'passed': False, 'detail': f'error reading config fields: {type(e).__name__}: {e}'})
+
+    try:
+        state = str(st.get('state', ''))
+        message = str(st.get('message', ''))
+        state_ok = norm(state) == 'idle' and message == ''
+        detail = f'state={state!r}, message={message!r}'
+        checks.append({'name': 'state file is idle/empty by default', 'passed': state_ok, 'detail': detail})
+    except Exception as e:
+        checks.append({'name': 'state file is idle/empty by default', 'passed': False, 'detail': f'error reading state fields: {type(e).__name__}: {e}'})
+
+    try:
+        marker_ok = ('nova' in norm(marker_text)) and ('n' in norm(marker_text)) and ('600' in norm(marker_text))
+        checks.append({'name': 'generated marker content present', 'passed': marker_ok, 'detail': 'searched marker file for NOVA, N, and 600'})
+    except Exception as e:
+        checks.append({'name': 'generated marker content present', 'passed': False, 'detail': f'error checking marker: {type(e).__name__}: {e}'})
+
+    passed_count = sum(1 for c in checks if c['passed'])
+    total = len(checks) if checks else 1
+    score = passed_count / total
+    result = {
+        'passed': passed_count == total,
+        'score': score,
+        'checks': checks,
+    }
+    print(json.dumps(result, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except Exception:
+        print(json.dumps({'passed': False, 'score': 0.0, 'checks': [{'name': 'fatal error', 'passed': False, 'detail': 'unexpected evaluator failure'}]}))

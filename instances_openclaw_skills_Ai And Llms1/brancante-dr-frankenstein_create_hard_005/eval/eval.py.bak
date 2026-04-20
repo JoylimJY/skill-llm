@@ -1,0 +1,85 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+
+def safe_read(path):
+    try:
+        return Path(path).read_text(encoding='utf-8')
+    except Exception as e:
+        return None, str(e)
+
+
+def normalize(s):
+    if not isinstance(s, str):
+        return ''
+    return re.sub(r'[^a-z0-9]+', '', s.lower())
+
+
+def find_json(path):
+    try:
+        text = Path(path).read_text(encoding='utf-8')
+        return json.loads(text), None
+    except Exception as e:
+        return None, str(e)
+
+
+def main():
+    checks = []
+    workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+
+    try:
+        out_path = workspace / 'output.json'
+        if not out_path.exists():
+            checks.append({'name': 'output_exists', 'passed': False, 'detail': 'output.json is missing'})
+            result = {'passed': False, 'score': 0.0, 'checks': checks}
+            print(json.dumps(result))
+            return
+
+        data, err = find_json(out_path)
+        if err:
+            checks.append({'name': 'output_parse', 'passed': False, 'detail': f'Could not parse output.json: {err}'})
+            result = {'passed': False, 'score': 0.0, 'checks': checks}
+            print(json.dumps(result))
+            return
+
+        expected_keys = {'category', 'prompt', 'dockerfile', 'gen_inputs_script', 'setup_script', 'eval_script', 'expected'}
+        got_keys = set(data.keys()) if isinstance(data, dict) else set()
+        checks.append({'name': 'top_level_keys', 'passed': expected_keys.issubset(got_keys), 'detail': f'Keys found: {sorted(got_keys)}'})
+
+        checks.append({'name': 'category_hard', 'passed': isinstance(data.get('category'), str) and normalize(data.get('category')) in {'create', 'merge', 'extract'}, 'detail': f"category={data.get('category')}"})
+
+        prompt = data.get('prompt', '')
+        prompt_ok = isinstance(prompt, str) and len(prompt.strip()) > 20 and 'dr-frankenstein' in prompt.lower()
+        checks.append({'name': 'prompt_mentions_skill', 'passed': prompt_ok, 'detail': 'prompt must mention the skill and be non-trivial'})
+
+        dockerfile = data.get('dockerfile', '')
+        docker_ok = isinstance(dockerfile, str) and 'COPY' not in dockerfile and 'ADD' not in dockerfile and 'pip install' in dockerfile.lower() and 'python:3.11-slim' in dockerfile.lower()
+        checks.append({'name': 'dockerfile_restrictions', 'passed': docker_ok, 'detail': 'Dockerfile must avoid COPY/ADD and include dependencies'})
+
+        setup_script = data.get('setup_script', '')
+        setup_ok = isinstance(setup_script, str) and 'apt-get update' not in setup_script.lower() and 'pip install' not in setup_script.lower()
+        checks.append({'name': 'setup_script_limits', 'passed': setup_ok, 'detail': 'setup_script must be minimal and not install packages'})
+
+        gen_script = data.get('gen_inputs_script', '')
+        gen_ok = isinstance(gen_script, str) and 'seed' in gen_script.lower() and 'marker' in gen_script.lower()
+        checks.append({'name': 'gen_script_deterministic', 'passed': gen_ok, 'detail': 'gen_inputs_script should be deterministic and contain marker content'})
+
+        expected = data.get('expected', {})
+        exp_ok = isinstance(expected, dict) and bool(expected.get('filenames')) and isinstance(expected.get('filenames'), list)
+        checks.append({'name': 'expected_metadata', 'passed': exp_ok, 'detail': f"expected keys={list(expected.keys()) if isinstance(expected, dict) else 'n/a'}"})
+
+    except Exception as e:
+        checks.append({'name': 'unexpected_error', 'passed': False, 'detail': str(e)})
+
+    total = len(checks) if checks else 1
+    passed = sum(1 for c in checks if c['passed'])
+    score = passed / total
+    result = {'passed': passed == total, 'score': score, 'checks': checks}
+    print(json.dumps(result))
+
+
+if __name__ == '__main__':
+    main()

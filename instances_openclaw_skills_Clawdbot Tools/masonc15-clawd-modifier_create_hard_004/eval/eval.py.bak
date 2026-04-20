@@ -1,0 +1,100 @@
+import json
+import re
+import sys
+from pathlib import Path
+
+workspace = Path(sys.argv[1])
+checks = []
+
+
+def add_check(name, passed, detail):
+    checks.append({"name": name, "passed": bool(passed), "detail": str(detail)})
+
+
+def safe_read_text(path):
+    try:
+        return Path(path).read_text(errors='replace')
+    except Exception as e:
+        return None, str(e)
+
+# Check 1: task marker file exists and contains expected marker
+try:
+    marker_path = workspace / 'task_markers.json'
+    if not marker_path.exists():
+        add_check('marker_file_exists', False, 'task_markers.json is missing')
+    else:
+        data = json.loads(marker_path.read_text())
+        marker_ok = 'clawd-blue-hat-arms-001' in str(data).lower()
+        add_check('marker_file_exists', marker_ok, f"marker content keys={list(data.keys()) if isinstance(data, dict) else 'non-dict'}")
+except Exception as e:
+    add_check('marker_file_exists', False, f'Error reading marker file: {e}')
+
+# Check 2: modified cli.js exists
+cli_path = workspace / 'cli.js'
+if not cli_path.exists():
+    # Also allow common nested output names, but prefer cli.js
+    candidates = list(workspace.rglob('cli.js'))
+    if candidates:
+        cli_path = candidates[0]
+if not cli_path.exists():
+    add_check('cli_exists', False, 'No cli.js found in workspace')
+    cli_text = None
+else:
+    try:
+        cli_text = cli_path.read_text(errors='replace')
+        add_check('cli_exists', True, f'Found {cli_path.name}')
+    except Exception as e:
+        cli_text = None
+        add_check('cli_exists', False, f'Could not read cli.js: {e}')
+
+# Check 3: color updated to blue in both rgb and ansi forms
+try:
+    if not cli_text:
+        add_check('color_updated', False, 'cli.js unavailable for inspection')
+    else:
+        t = re.sub(r'\s+', '', cli_text.lower())
+        rgb_ok = 'clawd_body:"rgb(100,149,237)"' in t or 'rgb(100,149,237)' in t
+        ansi_ok = 'clawd_body:"ansi:bluebright"' in t or 'ansi:bluebright' in t
+        add_check('color_updated', rgb_ok and ansi_ok, f'rgb_ok={rgb_ok}, ansi_ok={ansi_ok}')
+except Exception as e:
+    add_check('color_updated', False, f'Error checking colors: {e}')
+
+# Check 4: small Clawd includes arms and hat
+try:
+    if not cli_text:
+        add_check('small_clawd_theme', False, 'cli.js unavailable for small art inspection')
+    else:
+        compact = re.sub(r'\s+', '', cli_text)
+        has_left_arm = '╱▐' in compact or '╲▐' in compact or '┌▐' in compact
+        has_right_arm = '▌╲' in compact or '▌╱' in compact or '▌┐' in compact
+        has_hat = '┌─┐' in compact or '╭' in compact or '▲' in compact
+        add_check('small_clawd_theme', has_left_arm and has_right_arm and has_hat, f'left_arm={has_left_arm}, right_arm={has_right_arm}, hat={has_hat}')
+except Exception as e:
+    add_check('small_clawd_theme', False, f'Error checking small art: {e}')
+
+# Check 5: loading-screen or large art appears modified
+try:
+    if not cli_text:
+        add_check('large_clawd_theme', False, 'cli.js unavailable for large art inspection')
+    else:
+        compact = re.sub(r'\s+', '', cli_text)
+        large_markers = ['██▄█████▄██', '█████████', '░█████████░']
+        found_any = any(m in compact for m in large_markers)
+        add_check('large_clawd_theme', found_any, f'found_large_marker={found_any}')
+except Exception as e:
+    add_check('large_clawd_theme', False, f'Error checking large art: {e}')
+
+# Check 6: backup exists somewhere in workspace
+try:
+    backups = [p for p in workspace.rglob('*') if p.is_file() and ('backup' in p.name.lower() or p.suffix.lower() in {'.bak', '.orig'})]
+    add_check('backup_created', len(backups) > 0, f'backups_found={[p.name for p in backups[:5]]}')
+except Exception as e:
+    add_check('backup_created', False, f'Error searching backups: {e}')
+
+# Score calculation
+passed_count = sum(1 for c in checks if c['passed'])
+total_count = len(checks)
+score = passed_count / total_count if total_count else 0.0
+passed = passed_count == total_count
+
+print(json.dumps({"passed": passed, "score": score, "checks": checks}, ensure_ascii=False))

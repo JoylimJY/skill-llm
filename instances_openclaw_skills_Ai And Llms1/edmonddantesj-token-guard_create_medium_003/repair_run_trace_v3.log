@@ -1,0 +1,1277 @@
+Building Docker image...
+Creating new container...
+Container ready: e42ff861adea
+Workspace files: gen_inputs.py
+inputs
+setup.sh
+workspace
+
+============================================================
+Starting agent interaction (Repair Mode)...
+============================================================
+
+============================================================
+TASK: Create a lightweight Python package for TokenGuard that exposes a CLI and a small API for pre-flight token estimation, quota tracking, and duplicate-request detection. The task is to implement the missing engine so that it can read a config file, process a batch of sample prompts, and write a JSON status report plus a cache file. Keep it dependency-free and make the output deterministic.
+
+**Output Requirements:**
+- Write the JSON status report to `/workspace/workspace/report.json`
+- Write the cache file to `/workspace/workspace/.tokenguard_cache.json`
+- The status report must contain: `models` (with per-model quota info), `stats` (with blocks and fallbacks counts)
+- The cache file must contain: request hashes, timestamps, and model usage tracking
+============================================================
+
+
+--- Turn 1/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+ls -la /workspace
+```
+
+[EXECUTING bash]:
+ls -la /workspace
+
+[OUTPUT]:
+total 8
+drwxr-xr-x 4 root  root    94 Apr 13 13:51 .
+drwxr-xr-x 1 root  root    31 Apr 13 13:51 ..
+-rw-r--r-- 1 32113 42021 1101 Apr 12 11:17 gen_inputs.py
+drwxr-xr-x 2 root  root    77 Apr 13 13:51 inputs
+-rwxr-xr-x 1 32113 42021   56 Apr 12 11:17 setup.sh
+drwxr-xr-x 2 root  root    10 Apr 13 13:51 workspace
+
+
+--- Turn 2/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+ls -la /workspace/inputs /workspace/workspace
+```
+
+[EXECUTING bash]:
+ls -la /workspace/inputs /workspace/workspace
+
+[OUTPUT]:
+/workspace/inputs:
+total 12
+drwxr-xr-x 2 root root  77 Apr 13 13:51 .
+drwxr-xr-x 4 root root  94 Apr 13 13:51 ..
+-rw-r--r-- 1 root root 305 Apr 13 13:51 config.json
+-rw-r--r-- 1 root root 463 Apr 13 13:51 prompts.json
+-rw-r--r-- 1 root root  30 Apr 13 13:51 seed.txt
+
+/workspace/workspace:
+total 0
+drwxr-xr-x 2 root root 10 Apr 13 13:51 .
+drwxr-xr-x 4 root root 94 Apr 13 13:51 ..
+
+
+--- Turn 3/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/inputs/config.json
+```
+
+[EXECUTING bash]:
+cat /workspace/inputs/config.json
+
+[OUTPUT]:
+{
+  "models": {
+    "gemini-3-flash": {
+      "tpm_limit": 1000000,
+      "soft_limit_pct": 80,
+      "hard_limit_pct": 95
+    },
+    "claude-sonnet": {
+      "tpm_limit": 200000,
+      "soft_limit_pct": 80,
+      "hard_limit_pct": 95
+    }
+  },
+  "duplicate_window_seconds": 60,
+  "cache_enabled": true
+}
+
+--- Turn 4/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/inputs/prompts.json
+```
+
+[EXECUTING bash]:
+cat /workspace/inputs/prompts.json
+
+[OUTPUT]:
+[
+  {
+    "id": "req-001",
+    "model": "gemini-3-flash",
+    "text": "Hello world marker ALPHA 123."
+  },
+  {
+    "id": "req-002",
+    "model": "gemini-3-flash",
+    "text": "Hello world marker ALPHA 123."
+  },
+  {
+    "id": "req-003",
+    "model": "claude-sonnet",
+    "text": "CJK marker: 你好，世界。BETA-456"
+  },
+  {
+    "id": "req-004",
+    "model": "claude-sonnet",
+    "text": "Unique request GAMMA_789 with enough length to test estimation."
+  }
+]
+
+--- Turn 5/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/inputs/seed.txt && echo "---" && cat /workspace/setup.sh
+```
+
+[EXECUTING bash]:
+cat /workspace/inputs/seed.txt && echo "---" && cat /workspace/setup.sh
+
+[OUTPUT]:
+TOKENGUARD_MARKER_SEED=314159
+---
+#!/usr/bin/env bash
+set -euo pipefail
+mkdir -p workspace
+
+--- Turn 6/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/gen_inputs.py
+```
+
+[EXECUTING bash]:
+cat /workspace/gen_inputs.py
+
+[OUTPUT]:
+import json
+from pathlib import Path
+
+root = Path('.')
+(root / 'inputs').mkdir(exist_ok=True)
+
+config = {
+    'models': {
+        'gemini-3-flash': {'tpm_limit': 1000000, 'soft_limit_pct': 80, 'hard_limit_pct': 95},
+        'claude-sonnet': {'tpm_limit': 200000, 'soft_limit_pct': 80, 'hard_limit_pct': 95}
+    },
+    'duplicate_window_seconds': 60,
+    'cache_enabled': True
+}
+(root / 'inputs' / 'config.json').write_text(json.dumps(config, indent=2), encoding='utf-8')
+
+prompts = [
+    {'id': 'req-001', 'model': 'gemini-3-flash', 'text': 'Hello world marker ALPHA 123.'},
+    {'id': 'req-002', 'model': 'gemini-3-flash', 'text': 'Hello world marker ALPHA 123.'},
+    {'id': 'req-003', 'model': 'claude-sonnet', 'text': 'CJK marker: 你好，世界。BETA-456'},
+    {'id': 'req-004', 'model': 'claude-sonnet', 'text': 'Unique request GAMMA_789 with enough length to test estimation.'}
+]
+(root / 'inputs' / 'prompts.json').write_text(json.dumps(prompts, indent=2, ensure_ascii=False), encoding='utf-8')
+
+(root / 'inputs' / 'seed.txt').write_text('TOKENGUARD_MARKER_SEED=314159\n', encoding='utf-8')
+
+
+--- Turn 7/25 ---
+
+[ASSISTANT]:
+
+
+Now I understand the task. I need to create a TokenGuard Python package that:
+1. Reads config.json and prompts.json
+2. Processes prompts with token estimation, quota tracking, and duplicate detection
+3. Writes report.json and .tokenguard_cache.json
+
+Let me create the package structure:
+
+```bash
+mkdir -p /workspace/tokenguard
+```
+
+[EXECUTING bash]:
+mkdir -p /workspace/tokenguard
+
+[OUTPUT]:
+[Command completed successfully with no output]
+
+--- Turn 8/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat > /workspace/tokenguard/__init__.py << 'EOF'
+"""TokenGuard - Lightweight token estimation, quota tracking, and duplicate detection."""
+
+__version__ = "1.0.0"
+
+from .engine import TokenGuardEngine
+from .cli import main
+
+__all__ = ["TokenGuardEngine", "main"]
+EOF
+```
+
+[EXECUTING bash]:
+cat > /workspace/tokenguard/__init__.py << 'EOF'
+"""TokenGuard - Lightweight token estimation, quota tracking, and duplicate detection."""
+
+__version__ = "1.0.0"
+
+from .engine import TokenGuardEngine
+from .cli import main
+
+__all__ = ["TokenGuardEngine", "main"]
+EOF
+
+[OUTPUT]:
+[Command completed successfully with no output]
+
+--- Turn 9/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat > /workspace/tokenguard/engine.py << 'EOF'
+"""Core TokenGuard engine for token estimation, quota tracking, and duplicate detection."""
+
+import hashlib
+import json
+import time
+from pathlib import Path
+from typing import Any
+
+
+class TokenGuardEngine:
+    """Engine for pre-flight token estimation, quota tracking, and duplicate-request detection."""
+    
+    def __init__(self, config_path: str, cache_path: str = None):
+        """Initialize the engine with configuration.
+        
+        Args:
+            config_path: Path to the JSON config file
+            cache_path: Optional path to cache file (defaults to .tokenguard_cache.json in config dir)
+        """
+        self.config_path = Path(config_path)
+        self.cache_path = Path(cache_path) if cache_path else self.config_path.parent / ".tokenguard_cache.json"
+        
+        self.config = self._load_config()
+        self.cache = self._load_cache()
+        
+        # Initialize model usage tracking
+        self.model_usa...
+
+--- Turn 10/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat > /workspace/tokenguard/engine.py << 'EOF'
+"""Core TokenGuard engine for token estimation, quota tracking, and duplicate detection."""
+
+import hashlib
+import json
+import time
+from pathlib import Path
+from typing import Any
+
+
+class TokenGuardEngine:
+    """Engine for pre-flight token estimation, quota tracking, and duplicate-request detection."""
+    
+    def __init__(self, config_path: str, cache_path: str = None):
+        """Initialize the engine with configuration.
+        
+        Args:
+            config_path: Path to the JSON config file
+            cache_path: Optional path to cache file (defaults to .tokenguard_cache.json in config dir)
+        """
+        self.config_path = Path(config_path)
+        self.cache_path = Path(cache_path) if cache_path else self.config_path.parent / ".tokenguard_cache.json"
+        
+        self.config = self._load_config()
+        self.cache = self._load_cache()
+        
+        # Initialize model usage tracking
+        self.model_usa...
+
+--- Turn 11/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat > /workspace/tokenguard/engine.py << 'ENDOFFILE'
+"""Core TokenGuard engine for token estimation, quota tracking, and duplicate detection."""
+
+import hashlib
+import json
+import time
+from pathlib import Path
+from typing import Any
+
+
+class TokenGuardEngine:
+    """Engine for pre-flight token estimation, quota tracking, and duplicate-request detection."""
+    
+    def __init__(self, config_path: str, cache_path: str = None):
+        self.config_path = Path(config_path)
+        self.cache_path = Path(cache_path) if cache_path else self.config_path.parent / ".tokenguard_cache.json"
+        self.config = self._load_config()
+        self.cache = self._load_cache()
+        self.model_usage: dict[str, int] = {model: 0 for model in self.config.get("models", {})}
+        self.stats = {"blocks": 0, "fallbacks": 0}
+        self.results: list[dict[str, Any]] = []
+    
+    def _load_config(self) -> dict:
+        with open(self.config_path, "r", encoding="utf-8") as f:
+            return ...
+
+[EXECUTING bash]:
+cat > /workspace/tokenguard/engine.py << 'ENDOFFILE'
+"""Core TokenGuard engine for token estimation, quota tracking, and duplicate detection."""
+
+import hashlib
+import json
+import time
+from pathlib import Path
+from typing import Any
+
+
+class TokenGuardEngine:
+    """Engine for pre-flight token estimation, quota tracking, and duplicate-request detection."""
+    
+    def __init__(self, config_path: str, cache_path: str = None):
+        self.config_path = Path(config_path)
+        self.cache_path = Path(cache_path) if cache_path else self.config_path.parent / ".tokenguard_cache.json"
+        self.config = self._load_config()
+        self.cache = self._load_cache()
+        self.model_usage: dict[str, int] = {model: 0 for model in self.config.get("models", {})}
+        self.stats = {"blocks": 0, "fallbacks": 0}
+        self.results: list[dict[str, Any]] = []
+    
+    def _load_config(self) -> dict:
+        with open(self.config_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    
+    def _load_cache(self) -> dict:
+        if self.cache_path.exists():
+            with open(self.cache_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        return {"requests": {}, "model_usage": {}}
+    
+    def _save_cache(self) -> None:
+        cache_data = {"requests": self.cache.get("requests", {}), "model_usage": self.model_usage}
+        with open(self.cache_path, "w", encoding="utf-8") as f:
+            json.dump(cache_data, f, indent=2, ensure_ascii=False)
+    
+    def _estimate_tokens(self, text: str) -> int:
+        if not text:
+            return 0
+        cjk_count = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
+        ascii_count = len(text) - cjk_count
+        return max(1, (ascii_count // 4) + cjk_count)
+    
+    def _compute_hash(self, request_id: str, text: str) -> str:
+        content = f"{request_id}:{text}"
+        return hashlib.sha256(content.encode("utf-8")).hexdigest()
+    
+    def _is_duplicate(self, request_id: str, text: str, model: str) -> bool:
+        if not self.config.get("cache_enabled", True):
+            return False
+        hash_key = self._compute_hash(request_id, text)
+        window_seconds = self.config.get("duplicate_window_seconds", 60)
+        current_time = time.time()
+        cached = self.cache.get("requests", {}).get(hash_key, [])
+        for cached_entry in cached:
+            cached_time = cached_entry.get("timestamp", 0)
+            if current_time - cached_time <= window_seconds:
+                return True
+        return False
+    
+    def _check_quota(self, model: str, token_count: int) -> tuple[bool, str]:
+        model_config = self.config.get("models", {}).get(model, {})
+        if not model_config:
+            self.stats["fallbacks"] += 1
+            return True, "fallback"
+        tpm_limit = model_config.get("tpm_limit", 1000000)
+        soft_limit_pct = model_config.get("soft_limit_pct", 80)
+        hard_limit_pct = model_config.get("hard_limit_pct", 95)
+        current_usage = self.model_usage.get(model, 0)
+        hard_limit = tpm_limit * (hard_limit_pct / 100)
+        if current_usage + token_count > hard_limit:
+            return False, "hard_limit_exceeded"
+        soft_limit = tpm_limit * (soft_limit_pct / 100)
+        if current_usage + token_count > soft_limit:
+            self.stats["fallbacks"] += 1
+            return True, "soft_limit_warning"
+        return True, "ok"
+    
+    def process_request(self, request: dict) -> dict:
+        request_id = request.get("id", "")
+        model = request.get("model", "")
+        text = request.get("text", "")
+        token_count = self._estimate_tokens(text)
+        hash_key = self._compute_hash(request_id, text)
+        is_duplicate = self._is_duplicate(request_id, text, model)
+        allowed, quota_status = self._check_quota(model, token_count)
+        if is_duplicate:
+            status = "blocked_duplicate"
+            self.stats["blocks"] += 1
+        elif not allowed:
+            status = "blocked_quota"
+            self.stats["blocks"] += 1
+        else:
+            status = "allowed"
+            self.model_usage[model] = self.model_usage.get(model, 0) + token_count
+        if self.config.get("cache_enabled", True):
+            if hash_key not in self.cache.get("requests", {}):
+                self.cache.setdefault("requests", {})[hash_key] = []
+            self.cache["requests"][hash_key].append({
+                "request_id": request_id,
+                "timestamp": time.time(),
+                "model": model
+            })
+        result = {
+            "request_id": request_id,
+            "model": model,
+            "status": status,
+            "token_estimate": token_count,
+            "hash": hash_key,
+            "quota_status": quota_status
+        }
+        self.results.append(result)
+        return result
+    
+    def process_batch(self, prompts: list[dict]) -> list[dict]:
+        for prompt in prompts:
+            self.process_request(prompt)
+        return self.results
+    
+    def get_model_status(self) -> dict[str, dict]:
+        status = {}
+        for model, config in self.config.get("models", {}).items():
+            tpm_limit = config.get("tpm_limit", 0)
+            current = self.model_usage.get(model, 0)
+            used_pct = (current / tpm_limit * 100) if tpm_limit > 0 else 0
+            status[model] = {
+                "tpm_limit": tpm_limit,
+                "current_usage": current,
+                "used_percent": round(used_pct, 2),
+                "soft_limit": config.get("soft_limit_pct", 80),
+                "hard_limit": config.get("hard_limit_pct", 95)
+            }
+        return status
+    
+    def generate_report(self) -> dict:
+        return {
+            "models": self.get_model_status(),
+            "stats": self.stats,
+            "results": self.results
+        }
+    
+    def save_report(self, report_path: str) -> None:
+        report = self.generate_report()
+        with open(report_path, "w", encoding="utf-8") as f:
+            json.dump(report, f, indent=2, ensure_ascii=False)
+ENDOFFILE
+
+[OUTPUT]:
+[Command completed successfully with no output]
+
+--- Turn 12/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat > /workspace/tokenguard/cli.py << 'ENDOFFILE'
+"""Command-line interface for TokenGuard."""
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+from .engine import TokenGuardEngine
+
+
+def main():
+    """Main CLI entry point."""
+    parser = argparse.ArgumentParser(
+        prog="tokenguard",
+        description="TokenGuard - Token estimation, quota tracking, and duplicate detection"
+    )
+    parser.add_argument(
+        "--config", "-c",
+        default="config.json",
+        help="Path to configuration file (default: config.json)"
+    )
+    parser.add_argument(
+        "--prompts", "-p",
+        default="prompts.json",
+        help="Path to prompts JSON file (default: prompts.json)"
+    )
+    parser.add_argument(
+        "--report", "-r",
+        default="report.json",
+        help="Path to output report file (default: report.json)"
+    )
+    parser.add_argument(
+        "--cache", "-C",
+        default=None,
+        help="Path to cache file (default: .token...
+
+[EXECUTING bash]:
+cat > /workspace/tokenguard/cli.py << 'ENDOFFILE'
+"""Command-line interface for TokenGuard."""
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+from .engine import TokenGuardEngine
+
+
+def main():
+    """Main CLI entry point."""
+    parser = argparse.ArgumentParser(
+        prog="tokenguard",
+        description="TokenGuard - Token estimation, quota tracking, and duplicate detection"
+    )
+    parser.add_argument(
+        "--config", "-c",
+        default="config.json",
+        help="Path to configuration file (default: config.json)"
+    )
+    parser.add_argument(
+        "--prompts", "-p",
+        default="prompts.json",
+        help="Path to prompts JSON file (default: prompts.json)"
+    )
+    parser.add_argument(
+        "--report", "-r",
+        default="report.json",
+        help="Path to output report file (default: report.json)"
+    )
+    parser.add_argument(
+        "--cache", "-C",
+        default=None,
+        help="Path to cache file (default: .tokenguard_cache.json in config dir)"
+    )
+    parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Enable verbose output"
+    )
+    
+    args = parser.parse_args()
+    
+    config_path = Path(args.config)
+    prompts_path = Path(args.prompts)
+    report_path = Path(args.report)
+    cache_path = args.cache
+    
+    if not config_path.exists():
+        print(f"Error: Config file not found: {config_path}", file=sys.stderr)
+        sys.exit(1)
+    
+    if not prompts_path.exists():
+        print(f"Error: Prompts file not found: {prompts_path}", file=sys.stderr)
+        sys.exit(1)
+    
+    # Load prompts
+    with open(prompts_path, "r", encoding="utf-8") as f:
+        prompts = json.load(f)
+    
+    # Initialize engine
+    engine = TokenGuardEngine(str(config_path), cache_path)
+    
+    # Process batch
+    results = engine.process_batch(prompts)
+    
+    # Save report
+    engine.save_report(str(report_path))
+    
+    # Save cache
+    engine._save_cache()
+    
+    # Output summary
+    if args.verbose:
+        print(json.dumps(engine.generate_report(), indent=2, ensure_ascii=False))
+    else:
+        stats = engine.stats
+        print(f"Processed {len(results)} requests")
+        print(f"  Allowed: {len(results) - stats['blocks']}")
+        print(f"  Blocked: {stats['blocks']}")
+        print(f"  Fallbacks: {stats['fallbacks']}")
+        print(f"Report saved to: {report_path}")
+        print(f"Cache saved to: {engine.cache_path}")
+
+
+if __name__ == "__main__":
+    main()
+ENDOFFILE
+
+[OUTPUT]:
+[Command completed successfully with no output]
+
+--- Turn 13/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat > /workspace/tokenguard/__main__.py << 'ENDOFFILE'
+"""Allow running the package as a module: python -m tokenguard"""
+
+from .cli import main
+
+if __name__ == "__main__":
+    main()
+ENDOFFILE
+```
+
+[EXECUTING bash]:
+cat > /workspace/tokenguard/__main__.py << 'ENDOFFILE'
+"""Allow running the package as a module: python -m tokenguard"""
+
+from .cli import main
+
+if __name__ == "__main__":
+    main()
+ENDOFFILE
+
+[OUTPUT]:
+[Command completed successfully with no output]
+
+--- Turn 14/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cd /workspace && python -m tokenguard --config inputs/config.json --prompts inputs/prompts.json --report workspace/report.json --cache workspace/.tokenguard_cache.json --verbose
+```
+
+[EXECUTING bash]:
+cd /workspace && python -m tokenguard --config inputs/config.json --prompts inputs/prompts.json --report workspace/report.json --cache workspace/.tokenguard_cache.json --verbose
+
+[OUTPUT]:
+{
+  "models": {
+    "gemini-3-flash": {
+      "tpm_limit": 1000000,
+      "current_usage": 14,
+      "used_percent": 0.0,
+      "soft_limit": 80,
+      "hard_limit": 95
+    },
+    "claude-sonnet": {
+      "tpm_limit": 200000,
+      "current_usage": 24,
+      "used_percent": 0.01,
+      "soft_limit": 80,
+      "hard_limit": 95
+    }
+  },
+  "stats": {
+    "blocks": 0,
+    "fallbacks": 0
+  },
+  "results": [
+    {
+      "request_id": "req-001",
+      "model": "gemini-3-flash",
+      "status": "allowed",
+      "token_estimate": 7,
+      "hash": "de94542b2f47bc738498d56eefe82c7b866fb0c4da59c2dfe7e8fa6d2fec178b",
+      "quota_status": "ok"
+    },
+    {
+      "request_id": "req-002",
+      "model": "gemini-3-flash",
+      "status": "allowed",
+      "token_estimate": 7,
+      "hash": "02a15fad22910b7ccbaf492c46cf133639d36f0b1a4413b2ddf72945387347d6",
+      "quota_status": "ok"
+    },
+    {
+      "request_id": "req-003",
+      "model": "claude-sonnet",
+      "status": "allowed",
+      "token_estimate": 9,
+      "hash": "01a164852ab75bb8c68a0c49d9928f9b3f48d61d5643f44a8908a19767f1ff3c",
+      "quota_status": "ok"
+    },
+    {
+      "request_id": "req-004",
+      "model": "claude-sonnet",
+      "status": "allowed",
+      "token_estimate": 15,
+      "hash": "235027e7a5026af2c3f06a4c7f2676ab301fb4a27ab642b3fe3ffa44bab78c6d",
+      "quota_status": "ok"
+    }
+  ]
+}
+
+
+--- Turn 15/25 ---
+
+[ASSISTANT]:
+
+
+I notice that req-001 and req-002 have the same text but different hashes because the hash includes the request_id. For duplicate detection, we should hash only the text content. Let me fix this:
+
+```bash
+cat > /workspace/tokenguard/engine.py << 'ENDOFFILE'
+"""Core TokenGuard engine for token estimation, quota tracking, and duplicate detection."""
+
+import hashlib
+import json
+import time
+from pathlib import Path
+from typing import Any
+
+
+class TokenGuardEngine:
+    """Engine for pre-flight token estimation, quota tracking, and duplicate-request detection."""
+    
+    def __init__(self, config_path: str, cache_path: str = None):
+        self.config_path = Path(config_path)
+        self.cache_path = Path(cache_path) if cache_path else self.config_path.parent / ".tokenguard_cache.json"
+        self.config = self._load_config()
+        self.cache = self._load_cache()
+        self.model_usage: dict[str, int] = {model: 0 for model in self.config.get("models", {})}
+        self.stats = {"bloc...
+
+[EXECUTING bash]:
+cat > /workspace/tokenguard/engine.py << 'ENDOFFILE'
+"""Core TokenGuard engine for token estimation, quota tracking, and duplicate detection."""
+
+import hashlib
+import json
+import time
+from pathlib import Path
+from typing import Any
+
+
+class TokenGuardEngine:
+    """Engine for pre-flight token estimation, quota tracking, and duplicate-request detection."""
+    
+    def __init__(self, config_path: str, cache_path: str = None):
+        self.config_path = Path(config_path)
+        self.cache_path = Path(cache_path) if cache_path else self.config_path.parent / ".tokenguard_cache.json"
+        self.config = self._load_config()
+        self.cache = self._load_cache()
+        self.model_usage: dict[str, int] = {model: 0 for model in self.config.get("models", {})}
+        self.stats = {"blocks": 0, "fallbacks": 0}
+        self.results: list[dict[str, Any]] = []
+    
+    def _load_config(self) -> dict:
+        with open(self.config_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    
+    def _load_cache(self) -> dict:
+        if self.cache_path.exists():
+            with open(self.cache_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        return {"requests": {}, "model_usage": {}}
+    
+    def _save_cache(self) -> None:
+        cache_data = {"requests": self.cache.get("requests", {}), "model_usage": self.model_usage}
+        with open(self.cache_path, "w", encoding="utf-8") as f:
+            json.dump(cache_data, f, indent=2, ensure_ascii=False)
+    
+    def _estimate_tokens(self, text: str) -> int:
+        if not text:
+            return 0
+        cjk_count = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
+        ascii_count = len(text) - cjk_count
+        return max(1, (ascii_count // 4) + cjk_count)
+    
+    def _compute_text_hash(self, text: str) -> str:
+        """Compute hash based on text content only for duplicate detection."""
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
+    
+    def _compute_request_hash(self, request_id: str, text: str) -> str:
+        """Compute a unique hash for a specific request."""
+        content = f"{request_id}:{text}"
+        return hashlib.sha256(content.encode("utf-8")).hexdigest()
+    
+    def _is_duplicate(self, request_id: str, text: str, model: str) -> bool:
+        if not self.config.get("cache_enabled", True):
+            return False
+        text_hash = self._compute_text_hash(text)
+        window_seconds = self.config.get("duplicate_window_seconds", 60)
+        current_time = time.time()
+        cached = self.cache.get("requests", {}).get(text_hash, [])
+        for cached_entry in cached:
+            cached_time = cached_entry.get("timestamp", 0)
+            if current_time - cached_time <= window_seconds:
+                return True
+        return False
+    
+    def _check_quota(self, model: str, token_count: int) -> tuple[bool, str]:
+        model_config = self.config.get("models", {}).get(model, {})
+        if not model_config:
+            self.stats["fallbacks"] += 1
+            return True, "fallback"
+        tpm_limit = model_config.get("tpm_limit", 1000000)
+        soft_limit_pct = model_config.get("soft_limit_pct", 80)
+        hard_limit_pct = model_config.get("hard_limit_pct", 95)
+        current_usage = self.model_usage.get(model, 0)
+        hard_limit = tpm_limit * (hard_limit_pct / 100)
+        if current_usage + token_count > hard_limit:
+            return False, "hard_limit_exceeded"
+        soft_limit = tpm_limit * (soft_limit_pct / 100)
+        if current_usage + token_count > soft_limit:
+            self.stats["fallbacks"] += 1
+            return True, "soft_limit_warning"
+        return True, "ok"
+    
+    def process_request(self, request: dict) -> dict:
+        request_id = request.get("id", "")
+        model = request.get("model", "")
+        text = request.get("text", "")
+        token_count = self._estimate_tokens(text)
+        text_hash = self._compute_text_hash(text)
+        request_hash = self._compute_request_hash(request_id, text)
+        is_duplicate = self._is_duplicate(request_id, text, model)
+        allowed, quota_status = self._check_quota(model, token_count)
+        if is_duplicate:
+            status = "blocked_duplicate"
+            self.stats["blocks"] += 1
+        elif not allowed:
+            status = "blocked_quota"
+            self.stats["blocks"] += 1
+        else:
+            status = "allowed"
+            self.model_usage[model] = self.model_usage.get(model, 0) + token_count
+        if self.config.get("cache_enabled", True):
+            if text_hash not in self.cache.get("requests", {}):
+                self.cache.setdefault("requests", {})[text_hash] = []
+            self.cache["requests"][text_hash].append({
+                "request_id": request_id,
+                "timestamp": time.time(),
+                "model": model
+            })
+        result = {
+            "request_id": request_id,
+            "model": model,
+            "status": status,
+            "token_estimate": token_count,
+            "text_hash": text_hash,
+            "request_hash": request_hash,
+            "quota_status": quota_status
+        }
+        self.results.append(result)
+        return result
+    
+    def process_batch(self, prompts: list[dict]) -> list[dict]:
+        for prompt in prompts:
+            self.process_request(prompt)
+        return self.results
+    
+    def get_model_status(self) -> dict[str, dict]:
+        status = {}
+        for model, config in self.config.get("models", {}).items():
+            tpm_limit = config.get("tpm_limit", 0)
+            current = self.model_usage.get(model, 0)
+            used_pct = (current / tpm_limit * 100) if tpm_limit > 0 else 0
+            status[model] = {
+                "tpm_limit": tpm_limit,
+                "current_usage": current,
+                "used_percent": round(used_pct, 2),
+                "soft_limit": config.get("soft_limit_pct", 80),
+                "hard_limit": config.get("hard_limit_pct", 95)
+            }
+        return status
+    
+    def generate_report(self) -> dict:
+        return {
+            "models": self.get_model_status(),
+            "stats": self.stats,
+            "results": self.results
+        }
+    
+    def save_report(self, report_path: str) -> None:
+        report = self.generate_report()
+        with open(report_path, "w", encoding="utf-8") as f:
+            json.dump(report, f, indent=2, ensure_ascii=False)
+ENDOFFILE
+
+[OUTPUT]:
+[Command completed successfully with no output]
+
+--- Turn 16/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+rm -f /workspace/workspace/.tokenguard_cache.json && cd /workspace && python -m tokenguard --config inputs/config.json --prompts inputs/prompts.json --report workspace/report.json --cache workspace/.tokenguard_cache.json --verbose
+```
+
+[EXECUTING bash]:
+rm -f /workspace/workspace/.tokenguard_cache.json && cd /workspace && python -m tokenguard --config inputs/config.json --prompts inputs/prompts.json --report workspace/report.json --cache workspace/.tokenguard_cache.json --verbose
+
+[OUTPUT]:
+{
+  "models": {
+    "gemini-3-flash": {
+      "tpm_limit": 1000000,
+      "current_usage": 7,
+      "used_percent": 0.0,
+      "soft_limit": 80,
+      "hard_limit": 95
+    },
+    "claude-sonnet": {
+      "tpm_limit": 200000,
+      "current_usage": 24,
+      "used_percent": 0.01,
+      "soft_limit": 80,
+      "hard_limit": 95
+    }
+  },
+  "stats": {
+    "blocks": 1,
+    "fallbacks": 0
+  },
+  "results": [
+    {
+      "request_id": "req-001",
+      "model": "gemini-3-flash",
+      "status": "allowed",
+      "token_estimate": 7,
+      "text_hash": "a30b64e8e327cb7cde354cafa857d2b4ab22b5b96fc1f5a66fb08924452d986d",
+      "request_hash": "de94542b2f47bc738498d56eefe82c7b866fb0c4da59c2dfe7e8fa6d2fec178b",
+      "quota_status": "ok"
+    },
+    {
+      "request_id": "req-002",
+      "model": "gemini-3-flash",
+      "status": "blocked_duplicate",
+      "token_estimate": 7,
+      "text_hash": "a30b64e8e327cb7cde354cafa857d2b4ab22b5b96fc1f5a66fb08924452d986d",
+      "request_hash": "02a15fad22910b7ccbaf492c46cf133639d36f0b1a4413b2ddf72945387347d6",
+      "quota_status": "ok"
+    },
+    {
+      "request_id": "req-003",
+      "model": "claude-sonnet",
+      "status": "allowed",
+      "token_estimate": 9,
+      "text_hash": "0784ad9b557e3c0d8717e95785534af574868499387011f9fcb341098de81247",
+      "request_hash": "01a164852ab75bb8c68a0c49d9928f9b3f48d61d5643f44a8908a19767f1ff3c",
+      "quota_status": "ok"
+    },
+    {
+      "request_id": "req-004",
+      "model": "claude-sonnet",
+      "status": "allowed",
+      "token_estimate": 15,
+      "text_hash": "38812a7c6589288b0d43f05f79142ddc2985cbbf714147f1bfd09133bd170762",
+      "request_hash": "235027e7a5026af2c3f06a4c7f2676ab301fb4a27ab642b3fe3ffa44bab78c6d",
+      "quota_status": "ok"
+    }
+  ]
+}
+
+
+--- Turn 17/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/workspace/report.json
+```
+
+[EXECUTING bash]:
+cat /workspace/workspace/report.json
+
+[OUTPUT]:
+{
+  "models": {
+    "gemini-3-flash": {
+      "tpm_limit": 1000000,
+      "current_usage": 7,
+      "used_percent": 0.0,
+      "soft_limit": 80,
+      "hard_limit": 95
+    },
+    "claude-sonnet": {
+      "tpm_limit": 200000,
+      "current_usage": 24,
+      "used_percent": 0.01,
+      "soft_limit": 80,
+      "hard_limit": 95
+    }
+  },
+  "stats": {
+    "blocks": 1,
+    "fallbacks": 0
+  },
+  "results": [
+    {
+      "request_id": "req-001",
+      "model": "gemini-3-flash",
+      "status": "allowed",
+      "token_estimate": 7,
+      "text_hash": "a30b64e8e327cb7cde354cafa857d2b4ab22b5b96fc1f5a66fb08924452d986d",
+      "request_hash": "de94542b2f47bc738498d56eefe82c7b866fb0c4da59c2dfe7e8fa6d2fec178b",
+      "quota_status": "ok"
+    },
+    {
+      "request_id": "req-002",
+      "model": "gemini-3-flash",
+      "status": "blocked_duplicate",
+      "token_estimate": 7,
+      "text_hash": "a30b64e8e327cb7cde354cafa857d2b4ab22b5b96fc1f5a66fb08924452d986d",
+      "request_hash": "02a15fad22910b7ccbaf492c46cf133639d36f0b1a4413b2ddf72945387347d6",
+      "quota_status": "ok"
+    },
+    {
+      "request_id": "req-003",
+      "model": "claude-sonnet",
+      "status": "allowed",
+      "token_estimate": 9,
+      "text_hash": "0784ad9b557e3c0d8717e95785534af574868499387011f9fcb341098de81247",
+      "request_hash": "01a164852ab75bb8c68a0c49d9928f9b3f48d61d5643f44a8908a19767f1ff3c",
+      "quota_status": "ok"
+    },
+    {
+      "request_id": "req-004",
+      "model": "claude-sonnet",
+      "status": "allowed",
+      "token_estimate": 15,
+      "text_hash": "38812a7c6589288b0d43f05f79142ddc2985cbbf714147f1bfd09133bd170762",
+      "request_hash": "235027e7a5026af2c3f06a4c7f2676ab301fb4a27ab642b3fe3ffa44bab78c6d",
+      "quota_status": "ok"
+    }
+  ]
+}
+
+--- Turn 18/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/workspace/.tokenguard_cache.json
+```
+
+[EXECUTING bash]:
+cat /workspace/workspace/.tokenguard_cache.json
+
+[OUTPUT]:
+{
+  "requests": {
+    "a30b64e8e327cb7cde354cafa857d2b4ab22b5b96fc1f5a66fb08924452d986d": [
+      {
+        "request_id": "req-001",
+        "timestamp": 1776088361.2446744,
+        "model": "gemini-3-flash"
+      },
+      {
+        "request_id": "req-002",
+        "timestamp": 1776088361.2446926,
+        "model": "gemini-3-flash"
+      }
+    ],
+    "0784ad9b557e3c0d8717e95785534af574868499387011f9fcb341098de81247": [
+      {
+        "request_id": "req-003",
+        "timestamp": 1776088361.244711,
+        "model": "claude-sonnet"
+      }
+    ],
+    "38812a7c6589288b0d43f05f79142ddc2985cbbf714147f1bfd09133bd170762": [
+      {
+        "request_id": "req-004",
+        "timestamp": 1776088361.2447293,
+        "model": "claude-sonnet"
+      }
+    ]
+  },
+  "model_usage": {
+    "gemini-3-flash": 7,
+    "claude-sonnet": 24
+  }
+}
+
+--- Turn 19/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+ls -la /workspace/tokenguard/
+```
+
+[EXECUTING bash]:
+ls -la /workspace/tokenguard/
+
+[OUTPUT]:
+total 20
+drwxr-xr-x 3 root root  118 Apr 13 13:52 .
+drwxr-xr-x 5 root root  116 Apr 13 13:51 ..
+-rw-r--r-- 1 root root  213 Apr 13 13:51 __init__.py
+-rw-r--r-- 1 root root  128 Apr 13 13:52 __main__.py
+drwxr-xr-x 2 root root  147 Apr 13 13:52 __pycache__
+-rw-r--r-- 1 root root 2464 Apr 13 13:52 cli.py
+-rw-r--r-- 1 root root 6394 Apr 13 13:52 engine.py
+
+
+--- Turn 20/25 ---
+
+[ASSISTANT]:
+
+
+The TokenGuard package is complete. Let me verify the final structure and outputs:
+
+```bash
+echo "=== Package Structure ===" && find /workspace/tokenguard -name "*.py" -type f | head -20 && echo "" && echo "=== Report Contents ===" && cat /workspace/workspace/report.json && echo "" && echo "=== Cache Contents ===" && cat /workspace/workspace/.tokenguard_cache.json
+```
+
+[EXECUTING bash]:
+echo "=== Package Structure ===" && find /workspace/tokenguard -name "*.py" -type f | head -20 && echo "" && echo "=== Report Contents ===" && cat /workspace/workspace/report.json && echo "" && echo "=== Cache Contents ===" && cat /workspace/workspace/.tokenguard_cache.json
+
+[OUTPUT]:
+=== Package Structure ===
+/workspace/tokenguard/__init__.py
+/workspace/tokenguard/engine.py
+/workspace/tokenguard/cli.py
+/workspace/tokenguard/__main__.py
+
+=== Report Contents ===
+{
+  "models": {
+    "gemini-3-flash": {
+      "tpm_limit": 1000000,
+      "current_usage": 7,
+      "used_percent": 0.0,
+      "soft_limit": 80,
+      "hard_limit": 95
+    },
+    "claude-sonnet": {
+      "tpm_limit": 200000,
+      "current_usage": 24,
+      "used_percent": 0.01,
+      "soft_limit": 80,
+      "hard_limit": 95
+    }
+  },
+  "stats": {
+    "blocks": 1,
+    "fallbacks": 0
+  },
+  "results": [
+    {
+      "request_id": "req-001",
+      "model": "gemini-3-flash",
+      "status": "allowed",
+      "token_estimate": 7,
+      "text_hash": "a30b64e8e327cb7cde354cafa857d2b4ab22b5b96fc1f5a66fb08924452d986d",
+      "request_hash": "de94542b2f47bc738498d56eefe82c7b866fb0c4da59c2dfe7e8fa6d2fec178b",
+      "quota_status": "ok"
+    },
+    {
+      "request_id": "req-002",
+      "model": "gemini-3-flash",
+      "status": "blocked_duplicate",
+      "token_estimate": 7,
+      "text_hash": "a30b64e8e327cb7cde354cafa857d2b4ab22b5b96fc1f5a66fb08924452d986d",
+      "request_hash": "02a15fad22910b7ccbaf492c46cf133639d36f0b1a4413b2ddf72945387347d6",
+      "quota_status": "ok"
+    },
+    {
+      "request_id": "req-003",
+      "model": "claude-sonnet",
+      "status": "allowed",
+      "token_estimate": 9,
+      "text_hash": "0784ad9b557e3c0d8717e95785534af574868499387011f9fcb341098de81247",
+      "request_hash": "01a164852ab75bb8c68a0c49d9928f9b3f48d61d5643f44a8908a19767f1ff3c",
+      "quota_status": "ok"
+    },
+    {
+      "request_id": "req-004",
+      "model": "claude-sonnet",
+      "status": "allowed",
+      "token_estimate": 15,
+      "text_hash": "38812a7c6589288b0d43f05f79142ddc2985cbbf714147f1bfd09133bd170762",
+      "request_hash": "235027e7a5026af2c3f06a4c7f2676ab301fb4a27ab642b3fe3ffa44bab78c6d",
+      "quota_status": "ok"
+    }
+  ]
+}
+=== Cache Contents ===
+{
+  "requests": {
+    "a30b64e8e327c...
+
+--- Turn 21/25 ---
+[API ERROR]: Error code: 400 - {'error': {'message': "You passed 14337 input tokens and requested 2048 output tokens. However, the model's context length is only 16384 tokens, resulting in a maximum input length of 14336 tokens. Please reduce the length of the input prompt. (parameter=input_tokens, value=14337)", 'type': 'BadRequestError', 'param': 'input_tokens', 'code': 400}}
+
+--- Turn 22/25 ---
+[API ERROR]: Error code: 400 - {'error': {'message': "You passed 14337 input tokens and requested 2048 output tokens. However, the model's context length is only 16384 tokens, resulting in a maximum input length of 14336 tokens. Please reduce the length of the input prompt. (parameter=input_tokens, value=14337)", 'type': 'BadRequestError', 'param': 'input_tokens', 'code': 400}}
+
+--- Turn 23/25 ---
+[API ERROR]: Error code: 400 - {'error': {'message': "You passed 14337 input tokens and requested 2048 output tokens. However, the model's context length is only 16384 tokens, resulting in a maximum input length of 14336 tokens. Please reduce the length of the input prompt. (parameter=input_tokens, value=14337)", 'type': 'BadRequestError', 'param': 'input_tokens', 'code': 400}}
+
+--- Turn 24/25 ---
+[API ERROR]: Error code: 400 - {'error': {'message': "You passed 14337 input tokens and requested 2048 output tokens. However, the model's context length is only 16384 tokens, resulting in a maximum input length of 14336 tokens. Please reduce the length of the input prompt. (parameter=input_tokens, value=14337)", 'type': 'BadRequestError', 'param': 'input_tokens', 'code': 400}}
+
+--- Turn 25/25 ---
+[API ERROR]: Error code: 400 - {'error': {'message': "You passed 14337 input tokens and requested 2048 output tokens. However, the model's context length is only 16384 tokens, resulting in a maximum input length of 14336 tokens. Please reduce the length of the input prompt. (parameter=input_tokens, value=14337)", 'type': 'BadRequestError', 'param': 'input_tokens', 'code': 400}}
+
+⚠️ Agent reached max turns (25)
+
+Conversation saved to results/repair_run_Qwen3.5-27B_20260413_215102/edmonddantesj-token-guard_create_medium_003/conversation.json
+
+============================================================
+Running evaluation...
+============================================================
+
+Results for edmonddantesj-token-guard_create_medium_003:
+  Passed: False
+  Score:  0.86
+  Checks:
+    ✅ status-file-exists: exists
+    ✅ cache-file-exists: exists
+    ✅ status-json-structure: contains models and stats
+    ✅ status-model-quota-info: models have quota info
+    ✅ status-stats: blocks=1 fallbacks=0
+    ✅ cache-json-structure: cache has keys
+    ❌ cache-marker-content: missing known markers
+
+Cleaning up container e42ff861adea...
+Container removed.
+

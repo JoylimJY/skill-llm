@@ -1,7 +1,7 @@
 #!/bin/bash
 # Continue on errors so all skills get attempted
 total=0; success=0; failed=0
-for skill_dir in anthropic-skills/*/; do
+for skill_dir in "openclaw_skills/Ai And Llms"/*/; do
     skill=$(basename "$skill_dir")
     total=$((total+1))
     # Check if 6 instances already exist for this skill
@@ -12,7 +12,7 @@ for skill_dir in anthropic-skills/*/; do
         continue
     fi
     echo "=== Synthesizing: $skill (6 instances) ==="
-    if uv run python -m src.run synthesize --skill-dir "$skill_dir" --num 6; then
+    if uv run python -m src.run synthesize --skill-dir "$skill_dir" --num 6 --output-dir "instances_openclaw_skills_Ai And Llms2"; then
         success=$((success+1))
     else
         echo "FAILED: $skill"

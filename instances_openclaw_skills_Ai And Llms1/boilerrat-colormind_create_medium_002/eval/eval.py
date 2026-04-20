@@ -1,0 +1,137 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+checks = []
+score = 0.0
+
+
+def add_check(name, passed, detail):
+    checks.append({"name": name, "passed": bool(passed), "detail": str(detail)})
+
+
+def safe_read_text(path):
+    try:
+        return Path(path).read_text(encoding='utf-8', errors='replace'), None
+    except Exception as e:
+        return None, f"could not read {path}: {e}"
+
+
+def normalize(s):
+    return re.sub(r'[^a-z0-9]+', '', s.lower()) if isinstance(s, str) else ''
+
+
+def parse_rgb_triplets(text):
+    try:
+        return [tuple(map(int, m)) for m in re.findall(r'\b(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\b', text)]
+    except Exception:
+        return []
+
+
+def rgb_to_hex(rgb):
+    try:
+        return '#%02x%02x%02x' % tuple(max(0, min(255, int(x))) for x in rgb)
+    except Exception:
+        return None
+
+
+def load_json(path):
+    try:
+        return json.loads(Path(path).read_text(encoding='utf-8')), None
+    except Exception as e:
+        return None, f"could not parse json {path}: {e}"
+
+
+workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(".")
+
+# Initialize data and txt before use to avoid undefined variable errors
+data = None
+txt = ''
+
+# Check 1: palette.json exists and is valid JSON
+try:
+    palette_path = workspace / 'palette.json'
+    if not palette_path.exists():
+        add_check('palette_json_exists', False, 'palette.json is missing')
+    else:
+        data, err = load_json(palette_path)
+        if data is None:
+            add_check('palette_json_exists', False, err)
+        else:
+            add_check('palette_json_exists', True, 'palette.json found and parsed')
+except Exception as e:
+    add_check('palette_json_exists', False, f'error: {e}')
+    data = None
+
+# Check 2: palette.txt exists and mentions model ui and 5 colors
+try:
+    txt_path = workspace / 'palette.txt'
+    if not txt_path.exists():
+        add_check('palette_text_exists', False, 'palette.txt is missing')
+        txt = ''
+    else:
+        txt, err = safe_read_text(txt_path)
+        if txt is None:
+            add_check('palette_text_exists', False, err)
+            txt = ''
+        else:
+            ok_model = 'ui' in normalize(txt)
+            rgb_count = len(parse_rgb_triplets(txt))
+            add_check('palette_text_exists', ok_model and rgb_count >= 5, f"model_mentioned={ok_model}, rgb_triplets_found={rgb_count}")
+except Exception as e:
+    add_check('palette_text_exists', False, f'error: {e}')
+    txt = ''
+
+# Check 3: JSON shape has 5 colors with rgb-like triplets
+try:
+    if isinstance(data, dict):
+        palette = data.get('palette') or data.get('colors') or data.get('result')
+        if isinstance(palette, list) and len(palette) == 5:
+            valid = True
+            for item in palette:
+                if not (isinstance(item, list) and len(item) == 3 and all(isinstance(v, int) for v in item)):
+                    valid = False
+                    break
+            add_check('json_has_five_colors', valid, f'palette_length={len(palette)}' if isinstance(palette, list) else 'palette is not a list')
+        else:
+            add_check('json_has_five_colors', False, 'no 5-color palette list found')
+    else:
+        add_check('json_has_five_colors', False, 'palette.json not available as dict')
+except Exception as e:
+    add_check('json_has_five_colors', False, f'error: {e}')
+
+# Check 4: locked colors present approximately in first two slots
+try:
+    expected_locked = [(18, 18, 24), (88, 101, 242)]
+    found = False
+    if isinstance(data, dict):
+        palette = data.get('palette') or data.get('colors') or data.get('result')
+        if isinstance(palette, list) and len(palette) >= 2:
+            first_two = palette[:2]
+            matched = 0
+            for got, exp in zip(first_two, expected_locked):
+                try:
+                    if isinstance(got, list) and len(got) == 3:
+                        diffs = [abs(int(got[i]) - exp[i]) for i in range(3)]
+                        if sum(diffs) <= 30:
+                            matched += 1
+                except Exception:
+                    pass
+            found = matched == 2
+    add_check('locked_colors_respected', found, 'first two colors approximately match requested locks')
+except Exception as e:
+    add_check('locked_colors_respected', False, f'error: {e}')
+
+# Check 5: text contains hex representations for at least five colors if possible
+try:
+    hexes = re.findall(r'#[0-9a-fA-F]{6}', txt)
+    add_check('text_has_hex_colors', len(hexes) >= 5, f'hex_colors_found={len(hexes)}')
+except Exception as e:
+    add_check('text_has_hex_colors', False, f'error: {e}')
+
+passed = all(c['passed'] for c in checks)
+score = sum(1 for c in checks if c['passed']) / len(checks) if checks else 0.0
+result = {"passed": passed, "score": score, "checks": checks}
+print(json.dumps(result, ensure_ascii=False))

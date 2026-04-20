@@ -1,0 +1,80 @@
+import json
+import os
+from pathlib import Path
+
+workspace = Path(os.sys.argv[1]) if len(os.sys.argv) > 1 else Path('.')
+checks = []
+
+try:
+    report_path = workspace / "output" / "report.json"
+    summary_path = workspace / "output" / "summary.txt"
+    hardware_path = workspace / "hardware.json"
+    markers_path = workspace / "markers.txt"
+
+    def add_check(name, passed, detail):
+        checks.append({"name": name, "passed": bool(passed), "detail": str(detail)})
+
+    # Check 1: required files exist
+    try:
+        exists = report_path.exists() and summary_path.exists()
+        detail = f"report.json exists={report_path.exists()}, summary.txt exists={summary_path.exists()}"
+        add_check("output_files_exist", exists, detail)
+    except Exception as e:
+        add_check("output_files_exist", False, f"error checking files: {e}")
+
+    # Check 2: report JSON structure
+    report = None
+    try:
+        if report_path.exists():
+            report = json.loads(report_path.read_text(encoding='utf-8'))
+            ok = isinstance(report, dict) and 'top_models' in report and isinstance(report.get('top_models'), list)
+            add_check("report_json_structure", ok, f"keys={list(report.keys()) if isinstance(report, dict) else 'n/a'}")
+        else:
+            add_check("report_json_structure", False, "report.json missing")
+    except Exception as e:
+        add_check("report_json_structure", False, f"parse error: {e}")
+
+    # Check 3: top model is the expected coding model, fuzzy match
+    try:
+        if isinstance(report, dict):
+            top = report.get('top_models', [{}])[0] if report.get('top_models') else {}
+            name = str(top.get('name', '')).lower()
+            ok = ('qwen' in name and 'coder' in name and '7b' in name)
+            add_check("top_model_is_coding_pick", ok, f"top_model={top.get('name', '')}")
+        else:
+            add_check("top_model_is_coding_pick", False, "report unavailable")
+    except Exception as e:
+        add_check("top_model_is_coding_pick", False, f"error: {e}")
+
+    # Check 4: summary mentions marginal fit note if any marginal model exists in source recommendations
+    try:
+        has_marginal = False
+        if hardware_path.exists():
+            # We also inspect recommendations file if present; forgiving on missing file.
+            rec_path = workspace / 'recommendations.json'
+            if rec_path.exists():
+                rec = json.loads(rec_path.read_text(encoding='utf-8'))
+                for m in rec.get('models', []):
+                    if str(m.get('fit_level', '')).strip().lower() == 'marginal':
+                        has_marginal = True
+                        break
+        summary_text = summary_path.read_text(encoding='utf-8').lower() if summary_path.exists() else ''
+        ok = (not has_marginal) or ('marginal' in summary_text and 'fit' in summary_text)
+        add_check("marginal_fit_note", ok, f"has_marginal={has_marginal}, summary_mentions_marginal={'marginal' in summary_text}")
+    except Exception as e:
+        add_check("marginal_fit_note", False, f"error: {e}")
+
+    # Check 5: marker file present and preserved
+    try:
+        marker_text = markers_path.read_text(encoding='utf-8').lower() if markers_path.exists() else ''
+        ok = 'llmfit-adv-001' in marker_text and 'recommendation-set-a' in marker_text
+        add_check("marker_content_present", ok, f"markers_found={ok}")
+    except Exception as e:
+        add_check("marker_content_present", False, f"error: {e}")
+
+except Exception as e:
+    checks.append({"name": "fatal", "passed": False, "detail": f"unexpected eval error: {e}"})
+
+score = (sum(1 for c in checks if c.get('passed')) / len(checks)) if checks else 0.0
+passed = all(c.get('passed') for c in checks) if checks else False
+print(json.dumps({"passed": passed, "score": score, "checks": checks}, ensure_ascii=False))

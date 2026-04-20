@@ -1,0 +1,97 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+
+def norm(s):
+    try:
+        return re.sub(r'[^a-z0-9]+', '', str(s).lower())
+    except Exception:
+        return ''
+
+
+def safe_read(path):
+    try:
+        return Path(path).read_text(encoding='utf-8')
+    except Exception as e:
+        return None, str(e)
+
+
+def main():
+    checks = []
+    workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+
+    def add(name, passed, detail):
+        checks.append({'name': name, 'passed': bool(passed), 'detail': detail})
+
+    try:
+        out_path = workspace / 'memory' / 'soul' / 'prescription.json'
+        if not out_path.exists():
+            add('prescription_exists', False, 'memory/soul/prescription.json is missing')
+        else:
+            try:
+                data = json.loads(out_path.read_text(encoding='utf-8'))
+                add('prescription_exists', True, 'prescription file exists and is valid JSON')
+            except Exception as e:
+                data = {}
+                add('prescription_exists', False, f'prescription JSON malformed: {e}')
+
+        try:
+            txt_path = workspace / 'output.txt'
+            if not txt_path.exists():
+                add('output_txt_exists', False, 'output.txt is missing')
+            else:
+                txt = txt_path.read_text(encoding='utf-8', errors='ignore')
+                ok = ('aurelia' in txt.lower()) and ('mina' in txt.lower()) and ('dr. frankenstein' in txt.lower())
+                add('output_txt_exists', ok, 'output.txt mentions Aurelia, Mina, and Dr. Frankenstein' if ok else 'output.txt does not include required names')
+        except Exception as e:
+            add('output_txt_exists', False, f'error reading output.txt: {e}')
+
+        try:
+            spec = json.loads((workspace / 'memory' / 'soul' / 'prescription.json').read_text(encoding='utf-8')) if (workspace / 'memory' / 'soul' / 'prescription.json').exists() else {}
+            agent_name = norm(spec.get('agent_name') or spec.get('name') or '')
+            human_name = norm(spec.get('human_name') or spec.get('human') or '')
+            diagnosis = str(spec.get('diagnosis', ''))
+            has_hormones = isinstance(spec.get('hormonal_profile'), dict) and len(spec.get('hormonal_profile', {})) >= 11
+            has_crons = isinstance(spec.get('pill_schedule'), list) and len(spec.get('pill_schedule', [])) >= 6
+            has_cascades = isinstance(spec.get('cascade_rules'), list) and len(spec.get('cascade_rules', [])) >= 3
+            target = spec.get('daily_point_target')
+            target_ok = isinstance(target, (int, float)) and target >= 50
+            add('json_identity', agent_name == 'aurelia' and human_name == 'mina', f'agent={agent_name or "missing"}, human={human_name or "missing"}')
+            add('json_diagnosis', len(diagnosis.strip()) > 10, 'diagnosis present' if len(diagnosis.strip()) > 10 else 'diagnosis missing or too short')
+            add('json_hormones', has_hormones, 'hormonal_profile contains at least 11 hormones' if has_hormones else 'hormonal_profile incomplete')
+            add('json_crons', has_crons, 'pill_schedule includes multiple crons' if has_crons else 'pill_schedule incomplete')
+            add('json_cascades', has_cascades, 'cascade_rules includes multiple interactions' if has_cascades else 'cascade_rules incomplete')
+            add('json_target', target_ok, f'daily_point_target={target}' if target_ok else 'daily_point_target missing or too low')
+            markers = ' '.join(map(str, spec.get('source_markers', []))) if isinstance(spec.get('source_markers'), list) else ''
+            marker_ok = all(m in markers for m in ['SOUL-MARKER-91A', 'USER-MARKER-44C', 'MEMORY-MARKER-77Z'])
+            add('json_markers', marker_ok, 'source_markers reference the input markers' if marker_ok else 'source_markers missing required markers')
+        except Exception as e:
+            add('json_content', False, f'error validating prescription JSON: {e}')
+
+        try:
+            log_path = workspace / 'memory' / 'soul' / 'interview-log.md'
+            if not log_path.exists():
+                add('interview_log_exists', False, 'interview log is missing')
+            else:
+                log = log_path.read_text(encoding='utf-8', errors='ignore').lower()
+                ok = ('aurelia' in log) and ('mina' in log) and ('oxytocin' in log or 'cortisol' in log) and ('question' in log or 'interview' in log)
+                add('interview_log_exists', ok, 'interview log looks personalized and interview-like' if ok else 'interview log lacks required signals')
+        except Exception as e:
+            add('interview_log_exists', False, f'error reading interview log: {e}')
+
+        try:
+            score = sum(1 for c in checks if c['passed']) / len(checks) if checks else 0.0
+            passed = all(c['passed'] for c in checks)
+        except Exception:
+            score = 0.0
+            passed = False
+        print(json.dumps({'passed': passed, 'score': score, 'checks': checks}, ensure_ascii=False))
+    except Exception as e:
+        print(json.dumps({'passed': False, 'score': 0.0, 'checks': [{'name': 'fatal', 'passed': False, 'detail': str(e)}]}, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,105 @@
+import json
+import re
+import sys
+from pathlib import Path
+
+
+def normalize(s):
+    try:
+        s = s.lower()
+        s = re.sub(r'[^a-z0-9]+', ' ', s)
+        return re.sub(r'\s+', ' ', s).strip()
+    except Exception:
+        return ''
+
+
+def read_text(path):
+    try:
+        return Path(path).read_text(encoding='utf-8', errors='ignore'), None
+    except Exception as e:
+        return None, str(e)
+
+
+checks = []
+workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+output_path = workspace / 'cleaned.txt'
+input_path = workspace / 'draft.txt'
+
+# Check 1: output exists
+try:
+    exists = output_path.exists()
+    checks.append({
+        'name': 'output_exists',
+        'passed': bool(exists),
+        'detail': 'cleaned.txt found' if exists else 'cleaned.txt is missing'
+    })
+except Exception as e:
+    checks.append({'name': 'output_exists', 'passed': False, 'detail': f'exception: {e}'})
+
+# Check 2: output is meaningfully humanized by removing obvious AI phrases
+try:
+    content, err = read_text(output_path)
+    if content is None:
+        checks.append({'name': 'humanized_language', 'passed': False, 'detail': f'could not read cleaned.txt: {err}'})
+    else:
+        n = normalize(content)
+        banned = [
+            'at the end of the day',
+            'it is important to remember',
+            'firstly',
+            'secondly',
+            'finally',
+            'i hope this helps',
+            'let me know if you have any questions',
+            'it is worth noting'
+        ]
+        found = [b for b in banned if normalize(b) in n]
+        passed = len(found) <= 1
+        detail = 'few or no stock phrases remain' if passed else 'found banned phrases: ' + ', '.join(found)
+        checks.append({'name': 'humanized_language', 'passed': passed, 'detail': detail})
+except Exception as e:
+    checks.append({'name': 'humanized_language', 'passed': False, 'detail': f'exception: {e}'})
+
+# Check 3: meaning preserved with core content still present
+try:
+    content, err = read_text(output_path)
+    if content is None:
+        checks.append({'name': 'meaning_preserved', 'passed': False, 'detail': f'could not read cleaned.txt: {err}'})
+    else:
+        n = normalize(content)
+        required_any = [
+            ['process', 'simple'],
+            ['natural'],
+            ['read like', 'person'],
+            ['message']
+        ]
+        matched = 0
+        for group in required_any:
+            if all(token in n for token in group):
+                matched += 1
+        passed = matched >= 2
+        checks.append({
+            'name': 'meaning_preserved',
+            'passed': passed,
+            'detail': f'{matched} core meaning signals detected'
+        })
+except Exception as e:
+    checks.append({'name': 'meaning_preserved', 'passed': False, 'detail': f'exception: {e}'})
+
+# Check 4: input file still exists (verify task didn't corrupt workspace)
+try:
+    input_exists = input_path.exists()
+    marker_exists = (workspace / 'marker.txt').exists()
+    passed = input_exists and marker_exists
+    checks.append({
+        'name': 'marker_present',
+        'passed': passed,
+        'detail': 'workspace intact' if passed else 'input or marker file missing'
+    })
+except Exception as e:
+    checks.append({'name': 'marker_present', 'passed': False, 'detail': f'exception: {e}'})
+
+passed_count = sum(1 for c in checks if c.get('passed'))
+score = passed_count / len(checks) if checks else 0.0
+result = {'passed': passed_count == len(checks), 'score': score, 'checks': checks}
+print(json.dumps(result, ensure_ascii=False))

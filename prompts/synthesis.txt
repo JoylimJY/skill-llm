@@ -1,5 +1,4 @@
-You are a benchmark task synthesizer. Given a skill definition
-(used by an AI coding assistant), generate a complete task instance.
+You are a benchmark task synthesizer. Given a skill definition (used by an AI coding assistant), generate a complete task instance.
 
 ## Skill Content
 
@@ -17,12 +16,9 @@ Generate a {difficulty} difficulty task for this skill. Output a JSON object wit
 2. "prompt": a realistic user request (as if typed in a terminal). Vary tone and detail level.
 3. "dockerfile": a Dockerfile with all dependencies needed. Base image: python:3.11-slim or node:20-slim.
    Must include everything needed to run the task AND the eval.
-4. "gen_inputs_script": a Python script that, when executed, creates input files in the
-   current directory. Must be DETERMINISTIC (use fixed seeds). Embed known marker content
-   in generated files so eval can verify correctness.
+4. "gen_inputs_script": a Python script that, when executed, creates input files in the current directory. Must be DETERMINISTIC (use fixed seeds). Embed known marker content in generated files so eval can verify correctness.
 5. "setup_script": bash script to run after container starts (install extra tools, etc.)
-6. "eval_script": a Python script that takes one argument (workspace directory path),
-   checks if the task was completed correctly, and prints a JSON result:
+6. "eval_script": a Python script that takes one argument (workspace directory path), checks if the task was completed correctly, and prints a JSON result:
    {{"passed": bool, "score": float, "checks": [{{"name": str, "passed": bool, "detail": str}}]}}
    The script must be self-contained (only use packages installed via the Dockerfile or pip-installable packages).
 7. "expected": metadata about expected outputs (filenames, key properties)
@@ -34,8 +30,18 @@ Generate a {difficulty} difficulty task for this skill. Output a JSON object wit
 
 ## Constraints
 - gen_inputs_script must produce files with verifiable marker content
-- eval_script must test concrete, objectively verifiable properties (file exists, page count,
-  text contains, data matches, etc.)
+- eval_script must test concrete, objectively verifiable properties (file exists, page count, text contains, data matches, etc.)
 - Dockerfile must include everything needed to run the task AND the eval
 - All output in English
 - Return ONLY the JSON object, no markdown fences or explanation
+- eval_script MUST BE ROBUST AND FORGIVING: Never use strict `==` or overly rigid regex for LLM-generated strings, filenames, or extracted text. You MUST use fuzzy matching (e.g., case-insensitive search, stripping whitespaces/punctuation, flexible regex that allows optional characters).
+- eval_script MUST NEVER CRASH: Wrap all file reading, parsing, and regex matching logic in `try-except` blocks. If a file is missing or malformed, catch the exception, note it in the check's `detail`, and return `passed: false` gracefully. Do NOT let the script exit with a Python traceback.
+- eval_script DEPENDENCY RULE: Prefer Python standard libraries (os, json, re, csv, pathlib). If you import any third-party libraries in the eval_script, you absolutely MUST `pip install` them in the Dockerfile or setup_script.
+
+**### ADDED CRITICAL CONSTRAINTS (DO NOT VIOLATE) ###**
+
+DOCKERFILE FILE-ACCESS RESTRICTION: You MUST NOT use COPY or ADD commands in the dockerfile. Furthermore, NEVER use echo, cat, or heredocs to write scripts (like eval.py) inside the Dockerfile. The dockerfile MUST ONLY contain OS setup and RUN pip install commands. The actual scripts belong in their respective JSON fields and will be injected by the runtime harness.
+EVALUATOR ROLE ISOLATION (CRITICAL): The eval_script is a GRADER, NOT a solver. It MUST NEVER create the output files. It must assume the AI assistant has already run. If output.txt is missing, it MUST fail the check. NEVER write the solution in the eval_script.
+MANDATORY EVAL LOGIC: The `eval_script` must initialize a `checks` list, perform tests, and calculate the `score` as `(number of passed checks) / (total number of checks)`. 
+STRICT JSON OUTPUT SCHEMA: The `eval_script` MUST output a JSON object with exactly the keys: `"passed"`, `"score"`, and `"checks"`. Do NOT use other keys like "status" or "reason" at the top level.
+SETUP_SCRIPT LIMITATION: Do NOT run `apt-get update` or `pip install` in the `setup_script`. All environment preparation and dependency installation MUST be done in the `dockerfile` to ensure build-time caching. Use `setup_script` only for minimal runtime tasks (e.g., `chmod` or `mkdir`).

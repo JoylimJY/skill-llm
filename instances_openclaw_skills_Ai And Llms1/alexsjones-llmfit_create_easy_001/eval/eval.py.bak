@@ -1,0 +1,71 @@
+import json
+import sys
+from pathlib import Path
+
+
+def normalize(text):
+    try:
+        return ''.join(ch.lower() for ch in text if ch.isalnum() or ch.isspace())
+    except Exception:
+        return ''
+
+
+def safe_read(path):
+    try:
+        return Path(path).read_text(encoding='utf-8', errors='ignore')
+    except Exception as e:
+        return None, str(e)
+
+
+def main():
+    workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+    checks = []
+
+    out = workspace / 'output.txt'
+    try:
+        if not out.exists():
+            checks.append({"name": "output_exists", "passed": False, "detail": "output.txt is missing"})
+        else:
+            text, err = safe_read(out)
+            if text is None:
+                checks.append({"name": "output_exists", "passed": False, "detail": f"Could not read output.txt: {err}"})
+            else:
+                n = normalize(text)
+                passed = ('qwen' in n) and ('good' in n) and ('q5km' in n or 'q5 k m' in n)
+                checks.append({"name": "output_content", "passed": passed, "detail": "Expected model, fit level, and quantization mentioned"})
+    except Exception as e:
+        checks.append({"name": "output_exists", "passed": False, "detail": f"Unexpected error checking output.txt: {e}"})
+
+    pdf = workspace / 'source.pdf'
+    try:
+        if not pdf.exists():
+            checks.append({"name": "input_pdf_exists", "passed": False, "detail": "source.pdf is missing"})
+        else:
+            try:
+                from PyPDF2 import PdfReader
+                reader = PdfReader(str(pdf))
+                text = ''
+                for page in reader.pages:
+                    try:
+                        text += page.extract_text() or ''
+                    except Exception:
+                        pass
+                n = normalize(text)
+                passed = 'marker local llm advisor' in n and 'qwen qwen25coder7binstruct' in n
+                checks.append({"name": "input_pdf_marker", "passed": passed, "detail": "PDF should contain the embedded marker and model name"})
+            except Exception as e:
+                checks.append({"name": "input_pdf_marker", "passed": False, "detail": f"Could not parse source.pdf: {e}"})
+    except Exception as e:
+        checks.append({"name": "input_pdf_exists", "passed": False, "detail": f"Unexpected error checking source.pdf: {e}"})
+
+    score = 0.0
+    try:
+        score = sum(1 for c in checks if c.get('passed')) / max(len(checks), 1)
+    except Exception:
+        score = 0.0
+    passed = bool(checks) and all(c.get('passed') for c in checks)
+    print(json.dumps({"passed": passed, "score": score, "checks": checks}))
+
+
+if __name__ == '__main__':
+    main()

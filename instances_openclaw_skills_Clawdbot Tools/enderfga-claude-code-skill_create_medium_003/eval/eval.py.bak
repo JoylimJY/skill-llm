@@ -1,0 +1,84 @@
+import json
+import os
+from pathlib import Path
+
+workspace = Path(__import__('sys').argv[1])
+checks = []
+
+
+def add_check(name, passed, detail):
+    checks.append({"name": name, "passed": bool(passed), "detail": str(detail)})
+
+
+def safe_read(path):
+    try:
+        return path.read_text(encoding='utf-8')
+    except Exception as e:
+        return None, f"failed to read {path.name}: {e}"
+
+
+try:
+    marker_path = workspace / 'marker.json'
+    if marker_path.exists():
+        text = marker_path.read_text(encoding='utf-8')
+        try:
+            data = json.loads(text)
+            marker_ok = 'OPENCLAW_MARKER_7f3c2a'.lower() in json.dumps(data).lower()
+            add_check('marker_present', marker_ok, 'marker.json contains the deterministic marker' if marker_ok else 'marker.json missing expected marker content')
+        except Exception as e:
+            add_check('marker_present', False, f'could not parse marker.json: {e}')
+    else:
+        add_check('marker_present', False, 'marker.json is missing')
+except Exception as e:
+    add_check('marker_present', False, f'unexpected error: {e}')
+
+try:
+    cfg = workspace / 'mcp_config.json'
+    if cfg.exists():
+        text = cfg.read_text(encoding='utf-8')
+        lower = text.lower()
+        ok = ('filesystem' in lower) and ('/tmp' in lower)
+        add_check('mcp_config_contains_filesystem', ok, 'mcp_config.json references filesystem server and /tmp' if ok else 'mcp_config.json does not appear to configure the filesystem server')
+    else:
+        add_check('mcp_config_contains_filesystem', False, 'mcp_config.json is missing')
+except Exception as e:
+    add_check('mcp_config_contains_filesystem', False, f'unexpected error: {e}')
+
+try:
+    output_dir = workspace / 'output'
+    summary = output_dir / 'summary.txt'
+    if summary.exists():
+        try:
+            content = summary.read_text(encoding='utf-8')
+            normalized = ' '.join(content.lower().split())
+            has_server = 'filesystem' in normalized
+            has_count = 'tool' in normalized or 'count' in normalized
+            add_check('summary_exists', has_server and has_count, 'summary.txt mentions filesystem and tool count' if has_server and has_count else 'summary.txt exists but does not clearly summarize server IDs and tool count')
+        except Exception as e:
+            add_check('summary_exists', False, f'could not read summary.txt: {e}')
+    else:
+        add_check('summary_exists', False, 'output/summary.txt is missing')
+except Exception as e:
+    add_check('summary_exists', False, f'unexpected error: {e}')
+
+try:
+    persistent = workspace / 'output' / 'store.json'
+    if persistent.exists():
+        try:
+            data = json.loads(persistent.read_text(encoding='utf-8'))
+            count_ok = str(data.get('count', '')).strip() == '1' or data.get('count') == 1
+            items = data.get('items', [])
+            items_ok = isinstance(items, list) and any('item' in str(x).lower() for x in items)
+            add_check('persistent_store_values', count_ok and items_ok, 'store.json contains count=1 and at least one item entry' if count_ok and items_ok else 'store.json missing expected counter/item values')
+        except Exception as e:
+            add_check('persistent_store_values', False, f'could not parse store.json: {e}')
+    else:
+        add_check('persistent_store_values', False, 'output/store.json is missing')
+except Exception as e:
+    add_check('persistent_store_values', False, f'unexpected error: {e}')
+
+passed_count = sum(1 for c in checks if c.get('passed'))
+score = passed_count / len(checks) if checks else 0.0
+passed = passed_count == len(checks)
+
+print(json.dumps({"passed": passed, "score": score, "checks": checks}, ensure_ascii=False))

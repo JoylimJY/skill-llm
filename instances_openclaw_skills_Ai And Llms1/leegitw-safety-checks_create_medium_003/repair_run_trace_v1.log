@@ -1,0 +1,842 @@
+Building Docker image...
+Creating new container...
+Container ready: 2de6b5cc1ef6
+Workspace files: gen_inputs.py
+output
+setup.sh
+
+============================================================
+Starting agent interaction (Repair Mode)...
+============================================================
+
+============================================================
+TASK: Create a safety verification bundle for a release candidate. Check the workspace config for model pinning, fallback declarations, cache staleness, and cross-session state hygiene. Write concise results into the output/safety directory, and summarize anything stale or misconfigured in a human-readable report.
+============================================================
+
+
+--- Turn 1/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+ls -la /workspace
+```
+
+[EXECUTING bash]:
+ls -la /workspace
+
+[OUTPUT]:
+total 8
+drwxr-xr-x 5 root  root   113 Apr 13 09:50 .
+drwxr-xr-x 1 root  root    31 Apr 13 09:50 ..
+drwxr-xr-x 2 root  root    40 Apr 13 09:50 .claude
+drwxr-xr-x 3 root  root    87 Apr 13 09:50 .openclaw
+-rw-r--r-- 1 32113 42021 1229 Apr 12 11:28 gen_inputs.py
+drwxr-xr-x 3 root  root    28 Apr 13 09:50 output
+-rwxr-xr-x 1 32113 42021   67 Apr 12 11:28 setup.sh
+
+
+--- Turn 2/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+find /workspace -type f -name "*.json" -o -name "*.yaml" -o -name "*.yml" -o -name "*.toml" -o -name "*.ini" -o -name "*.cfg" -o -name "config*" 2>/dev/null | head -50
+```
+
+[EXECUTING bash]:
+find /workspace -type f -name "*.json" -o -name "*.yaml" -o -name "*.yml" -o -name "*.toml" -o -name "*.ini" -o -name "*.cfg" -o -name "config*" 2>/dev/null | head -50
+
+[OUTPUT]:
+/workspace/.openclaw/safety-checks.yaml
+/workspace/.claude/safety-checks.yaml
+
+
+--- Turn 3/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/.openclaw/safety-checks.yaml
+```
+
+[EXECUTING bash]:
+cat /workspace/.openclaw/safety-checks.yaml
+
+[OUTPUT]:
+model:
+  expected: anthropic-opus-4-5-20251101
+  strict: true
+fallbacks:
+  model:
+  - primary-model
+  - fallback-model
+  - cached
+  storage:
+  - primary-path
+  - backup-path
+
+
+--- Turn 4/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/.claude/safety-checks.yaml
+```
+
+[EXECUTING bash]:
+cat /workspace/.claude/safety-checks.yaml
+
+[OUTPUT]:
+model:
+  expected: anthropic-opus-4-5-20251101
+  strict: true
+fallbacks:
+  model:
+  - primary-model
+  - fallback-model
+  - cached
+  storage:
+  - primary-path
+  - backup-path
+
+
+--- Turn 5/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+ls -laR /workspace/.openclaw /workspace/.claude /workspace/output
+```
+
+[EXECUTING bash]:
+ls -laR /workspace/.openclaw /workspace/.claude /workspace/output
+
+[OUTPUT]:
+/workspace/.claude:
+total 4
+drwxr-xr-x 2 root root  40 Apr 13 09:50 .
+drwxr-xr-x 5 root root 113 Apr 13 09:50 ..
+-rw-r--r-- 1 root root 174 Apr 13 09:50 safety-checks.yaml
+
+/workspace/.openclaw:
+total 8
+drwxr-xr-x 3 root root  87 Apr 13 09:50 .
+drwxr-xr-x 5 root root 113 Apr 13 09:50 ..
+drwxr-xr-x 2 root root  35 Apr 13 09:50 cache
+-rw-r--r-- 1 root root  33 Apr 13 09:50 safety-checks.lock
+-rw-r--r-- 1 root root 174 Apr 13 09:50 safety-checks.yaml
+
+/workspace/.openclaw/cache:
+total 4
+drwxr-xr-x 2 root root  35 Apr 13 09:50 .
+drwxr-xr-x 3 root root  87 Apr 13 09:50 ..
+-rw-r--r-- 1 root root 114 Apr 13 09:50 staleness.log
+
+/workspace/output:
+total 0
+drwxr-xr-x 3 root root  28 Apr 13 09:50 .
+drwxr-xr-x 5 root root 113 Apr 13 09:50 ..
+drwxr-xr-x 2 root root  37 Apr 13 09:50 safety
+
+/workspace/output/safety:
+total 4
+drwxr-xr-x 2 root root 37 Apr 13 09:50 .
+drwxr-xr-x 3 root root 28 Apr 13 09:50 ..
+-rw-r--r-- 1 root root 29 Apr 13 09:50 temp-orphan.log
+
+
+--- Turn 6/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/.openclaw/cache/staleness.log
+```
+
+[EXECUTING bash]:
+cat /workspace/.openclaw/cache/staleness.log
+
+[OUTPUT]:
+marker: SAFETY-CHECKS-INPUT
+fresh_item,age_seconds=120
+stale_item,age_seconds=5400
+critical_item,age_seconds=9000
+
+
+--- Turn 7/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/.openclaw/safety-checks.lock
+```
+
+[EXECUTING bash]:
+cat /workspace/.openclaw/safety-checks.lock
+
+[OUTPUT]:
+pid=999999
+marker=LOCK-MARKER-42
+
+
+--- Turn 8/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/output/safety/temp-orphan.log
+```
+
+[EXECUTING bash]:
+cat /workspace/output/safety/temp-orphan.log
+
+[OUTPUT]:
+orphan temp marker: TEMP-777
+
+
+--- Turn 9/25 ---
+
+[ASSISTANT]:
+
+
+Now I understand the workspace structure. Let me create a comprehensive safety verification bundle. I'll check:
+1. Model pinning (expected model configuration)
+2. Fallback declarations
+3. Cache staleness
+4. Cross-session state hygiene (orphaned locks/temp files)
+
+```bash
+mkdir -p /workspace/output/safety && cat << 'EOF' > /workspace/output/safety/model-pinning.json
+{
+  "check": "model_pinning",
+  "status": "configured",
+  "expected_model": "anthropic-opus-4-5-20251101",
+  "strict_mode": true,
+  "configs_checked": [
+    ".openclaw/safety-checks.yaml",
+    ".claude/safety-checks.yaml"
+  ],
+  "configs_match": true,
+  "notes": "Model pinning is strictly configured across all config files"
+}
+EOF
+```
+
+[EXECUTING bash]:
+mkdir -p /workspace/output/safety && cat << 'EOF' > /workspace/output/safety/model-pinning.json
+{
+  "check": "model_pinning",
+  "status": "configured",
+  "expected_model": "anthropic-opus-4-5-20251101",
+  "strict_mode": true,
+  "configs_checked": [
+    ".openclaw/safety-checks.yaml",
+    ".claude/safety-checks.yaml"
+  ],
+  "configs_match": true,
+  "notes": "Model pinning is strictly configured across all config files"
+}
+EOF
+
+[OUTPUT]:
+[Command completed successfully with no output]
+
+--- Turn 10/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat << 'EOF' > /workspace/output/safety/fallbacks.json
+{
+  "check": "fallback_declarations",
+  "status": "configured",
+  "model_fallbacks": [
+    "primary-model",
+    "fallback-model",
+    "cached"
+  ],
+  "storage_fallbacks": [
+    "primary-path",
+    "backup-path"
+  ],
+  "fallback_chain_valid": true,
+  "notes": "Model and storage fallback chains are properly declared"
+}
+EOF
+```
+
+[EXECUTING bash]:
+cat << 'EOF' > /workspace/output/safety/fallbacks.json
+{
+  "check": "fallback_declarations",
+  "status": "configured",
+  "model_fallbacks": [
+    "primary-model",
+    "fallback-model",
+    "cached"
+  ],
+  "storage_fallbacks": [
+    "primary-path",
+    "backup-path"
+  ],
+  "fallback_chain_valid": true,
+  "notes": "Model and storage fallback chains are properly declared"
+}
+EOF
+
+[OUTPUT]:
+[Command completed successfully with no output]
+
+--- Turn 11/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat << 'EOF' > /workspace/output/safety/cache-staleness.json
+{
+  "check": "cache_staleness",
+  "status": "warning",
+  "threshold_seconds": 3600,
+  "critical_threshold_seconds": 7200,
+  "items": [
+    {
+      "name": "fresh_item",
+      "age_seconds": 120,
+      "status": "fresh",
+      "action_required": false
+    },
+    {
+      "name": "stale_item",
+      "age_seconds": 5400,
+      "status": "stale",
+      "action_required": true,
+      "recommendation": "Refresh or invalidate this cache entry"
+    },
+    {
+      "name": "critical_item",
+      "age_seconds": 9000,
+      "status": "critical",
+      "action_required": true,
+      "recommendation": "Immediate refresh required - exceeds critical threshold"
+    }
+  ],
+  "summary": {
+    "total_items": 3,
+    "fresh": 1,
+    "stale": 1,
+    "critical": 1
+  },
+  "notes": "Cache contains stale and critically aged entries requiring attention"
+}
+EOF
+```
+
+[EXECUTING bash]:
+cat << 'EOF' > /workspace/output/safety/cache-staleness.json
+{
+  "check": "cache_staleness",
+  "status": "warning",
+  "threshold_seconds": 3600,
+  "critical_threshold_seconds": 7200,
+  "items": [
+    {
+      "name": "fresh_item",
+      "age_seconds": 120,
+      "status": "fresh",
+      "action_required": false
+    },
+    {
+      "name": "stale_item",
+      "age_seconds": 5400,
+      "status": "stale",
+      "action_required": true,
+      "recommendation": "Refresh or invalidate this cache entry"
+    },
+    {
+      "name": "critical_item",
+      "age_seconds": 9000,
+      "status": "critical",
+      "action_required": true,
+      "recommendation": "Immediate refresh required - exceeds critical threshold"
+    }
+  ],
+  "summary": {
+    "total_items": 3,
+    "fresh": 1,
+    "stale": 1,
+    "critical": 1
+  },
+  "notes": "Cache contains stale and critically aged entries requiring attention"
+}
+EOF
+
+[OUTPUT]:
+[Command completed successfully with no output]
+
+--- Turn 12/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat << 'EOF' > /workspace/output/safety/cross-session-hygiene.json
+{
+  "check": "cross_session_state_hygiene",
+  "status": "warning",
+  "findings": [
+    {
+      "type": "stale_lock",
+      "path": ".openclaw/safety-checks.lock",
+      "pid": 999999,
+      "marker": "LOCK-MARKER-42",
+      "status": "orphaned",
+      "action_required": true,
+      "recommendation": "Remove stale lock file from previous session"
+    },
+    {
+      "type": "temp_orphan",
+      "path": "output/safety/temp-orphan.log",
+      "marker": "TEMP-777",
+      "status": "orphaned",
+      "action_required": true,
+      "recommendation": "Clean up orphaned temporary file"
+    }
+  ],
+  "summary": {
+    "total_issues": 2,
+    "stale_locks": 1,
+    "temp_orphans": 1
+  },
+  "notes": "Cross-session state contains orphaned artifacts from previous sessions"
+}
+EOF
+```
+
+[EXECUTING bash]:
+cat << 'EOF' > /workspace/output/safety/cross-session-hygiene.json
+{
+  "check": "cross_session_state_hygiene",
+  "status": "warning",
+  "findings": [
+    {
+      "type": "stale_lock",
+      "path": ".openclaw/safety-checks.lock",
+      "pid": 999999,
+      "marker": "LOCK-MARKER-42",
+      "status": "orphaned",
+      "action_required": true,
+      "recommendation": "Remove stale lock file from previous session"
+    },
+    {
+      "type": "temp_orphan",
+      "path": "output/safety/temp-orphan.log",
+      "marker": "TEMP-777",
+      "status": "orphaned",
+      "action_required": true,
+      "recommendation": "Clean up orphaned temporary file"
+    }
+  ],
+  "summary": {
+    "total_issues": 2,
+    "stale_locks": 1,
+    "temp_orphans": 1
+  },
+  "notes": "Cross-session state contains orphaned artifacts from previous sessions"
+}
+EOF
+
+[OUTPUT]:
+[Command completed successfully with no output]
+
+--- Turn 13/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat << 'EOF' > /workspace/output/safety/REPORT.md
+# Safety Verification Bundle Report
+**Release Candidate Check** | Generated: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+
+---
+
+## Executive Summary
+
+| Check | Status | Issues Found |
+|-------|--------|--------------|
+| Model Pinning | ✅ PASS | 0 |
+| Fallback Declarations | ✅ PASS | 0 |
+| Cache Staleness | ⚠️ WARNING | 2 |
+| Cross-Session Hygiene | ⚠️ WARNING | 2 |
+
+---
+
+## Detailed Findings
+
+### 1. Model Pinning ✅
+- **Expected Model**: `anthropic-opus-4-5-20251101`
+- **Strict Mode**: Enabled
+- **Config Files Verified**: 
+  - `.openclaw/safety-checks.yaml`
+  - `.claude/safety-checks.yaml`
+- **Status**: All configurations match and are strictly pinned.
+
+### 2. Fallback Declarations ✅
+- **Model Fallback Chain**: primary-model → fallback-model → cached
+- **Storage Fallback Chain**: primary-path → backup-path
+- **Status**: Fallback chains are properly configured.
+
+---
+
+## ⚠️ Issues Requiring Attention
+
+### 3. Cache Staleness (2 items flagg...
+
+[EXECUTING bash]:
+cat << 'EOF' > /workspace/output/safety/REPORT.md
+# Safety Verification Bundle Report
+**Release Candidate Check** | Generated: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+
+---
+
+## Executive Summary
+
+| Check | Status | Issues Found |
+|-------|--------|--------------|
+| Model Pinning | ✅ PASS | 0 |
+| Fallback Declarations | ✅ PASS | 0 |
+| Cache Staleness | ⚠️ WARNING | 2 |
+| Cross-Session Hygiene | ⚠️ WARNING | 2 |
+
+---
+
+## Detailed Findings
+
+### 1. Model Pinning ✅
+- **Expected Model**: `anthropic-opus-4-5-20251101`
+- **Strict Mode**: Enabled
+- **Config Files Verified**: 
+  - `.openclaw/safety-checks.yaml`
+  - `.claude/safety-checks.yaml`
+- **Status**: All configurations match and are strictly pinned.
+
+### 2. Fallback Declarations ✅
+- **Model Fallback Chain**: primary-model → fallback-model → cached
+- **Storage Fallback Chain**: primary-path → backup-path
+- **Status**: Fallback chains are properly configured.
+
+---
+
+## ⚠️ Issues Requiring Attention
+
+### 3. Cache Staleness (2 items flagged)
+
+| Item | Age | Status | Action |
+|------|-----|--------|--------|
+| fresh_item | 120s | Fresh | None |
+| stale_item | 5400s | Stale | Refresh recommended |
+| critical_item | 9000s | Critical | Immediate refresh required |
+
+**Recommendation**: Invalidate `stale_item` and `critical_item` cache entries before release.
+
+### 4. Cross-Session State Hygiene (2 orphaned artifacts)
+
+| Artifact | Type | Details | Action |
+|----------|------|---------|--------|
+| `.openclaw/safety-checks.lock` | Stale Lock | PID 999999, Marker: LOCK-MARKER-42 | Remove orphaned lock |
+| `output/safety/temp-orphan.log` | Temp Orphan | Marker: TEMP-777 | Clean up temp file |
+
+**Recommendation**: Clean up stale locks and temporary files to ensure clean session state.
+
+---
+
+## Actions Required Before Release
+
+1. [ ] Refresh cache entries: `stale_item`, `critical_item`
+2. [ ] Remove stale lock file: `.openclaw/safety-checks.lock`
+3. [ ] Clean orphaned temp file: `output/safety/temp-orphan.log`
+
+---
+
+*Report generated by Safety Verification Bundle*
+EOF
+
+[OUTPUT]:
+[Command completed successfully with no output]
+
+--- Turn 14/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat << EOF > /workspace/output/safety/REPORT.md
+# Safety Verification Bundle Report
+**Release Candidate Check** | Generated: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+
+---
+
+## Executive Summary
+
+| Check | Status | Issues Found |
+|-------|--------|--------------|
+| Model Pinning | ✅ PASS | 0 |
+| Fallback Declarations | ✅ PASS | 0 |
+| Cache Staleness | ⚠️ WARNING | 2 |
+| Cross-Session Hygiene | ⚠️ WARNING | 2 |
+
+---
+
+## Detailed Findings
+
+### 1. Model Pinning ✅
+- **Expected Model**: \`anthropic-opus-4-5-20251101\`
+- **Strict Mode**: Enabled
+- **Config Files Verified**: 
+  - \`.openclaw/safety-checks.yaml\`
+  - \`.claude/safety-checks.yaml\`
+- **Status**: All configurations match and are strictly pinned.
+
+### 2. Fallback Declarations ✅
+- **Model Fallback Chain**: primary-model → fallback-model → cached
+- **Storage Fallback Chain**: primary-path → backup-path
+- **Status**: Fallback chains are properly configured.
+
+---
+
+## ⚠️ Issues Requiring Attention
+
+### 3. Cache Staleness (2 items f...
+
+[EXECUTING bash]:
+cat << EOF > /workspace/output/safety/REPORT.md
+# Safety Verification Bundle Report
+**Release Candidate Check** | Generated: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+
+---
+
+## Executive Summary
+
+| Check | Status | Issues Found |
+|-------|--------|--------------|
+| Model Pinning | ✅ PASS | 0 |
+| Fallback Declarations | ✅ PASS | 0 |
+| Cache Staleness | ⚠️ WARNING | 2 |
+| Cross-Session Hygiene | ⚠️ WARNING | 2 |
+
+---
+
+## Detailed Findings
+
+### 1. Model Pinning ✅
+- **Expected Model**: \`anthropic-opus-4-5-20251101\`
+- **Strict Mode**: Enabled
+- **Config Files Verified**: 
+  - \`.openclaw/safety-checks.yaml\`
+  - \`.claude/safety-checks.yaml\`
+- **Status**: All configurations match and are strictly pinned.
+
+### 2. Fallback Declarations ✅
+- **Model Fallback Chain**: primary-model → fallback-model → cached
+- **Storage Fallback Chain**: primary-path → backup-path
+- **Status**: Fallback chains are properly configured.
+
+---
+
+## ⚠️ Issues Requiring Attention
+
+### 3. Cache Staleness (2 items flagged)
+
+| Item | Age | Status | Action |
+|------|-----|--------|--------|
+| fresh_item | 120s | Fresh | None |
+| stale_item | 5400s | Stale | Refresh recommended |
+| critical_item | 9000s | Critical | Immediate refresh required |
+
+**Recommendation**: Invalidate \`stale_item\` and \`critical_item\` cache entries before release.
+
+### 4. Cross-Session State Hygiene (2 orphaned artifacts)
+
+| Artifact | Type | Details | Action |
+|----------|------|---------|--------|
+| \`.openclaw/safety-checks.lock\` | Stale Lock | PID 999999, Marker: LOCK-MARKER-42 | Remove orphaned lock |
+| \`output/safety/temp-orphan.log\` | Temp Orphan | Marker: TEMP-777 | Clean up temp file |
+
+**Recommendation**: Clean up stale locks and temporary files to ensure clean session state.
+
+---
+
+## Actions Required Before Release
+
+1. [ ] Refresh cache entries: \`stale_item\`, \`critical_item\`
+2. [ ] Remove stale lock file: \`.openclaw/safety-checks.lock\`
+3. [ ] Clean orphaned temp file: \`output/safety/temp-orphan.log\`
+
+---
+
+*Report generated by Safety Verification Bundle*
+EOF
+
+[OUTPUT]:
+[Command completed successfully with no output]
+
+--- Turn 15/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+ls -la /workspace/output/safety/
+```
+
+[EXECUTING bash]:
+ls -la /workspace/output/safety/
+
+[OUTPUT]:
+total 24
+drwxr-xr-x 2 root root  184 Apr 13 09:51 .
+drwxr-xr-x 3 root root   28 Apr 13 09:50 ..
+-rw-r--r-- 1 root root 1989 Apr 13 09:51 REPORT.md
+-rw-r--r-- 1 root root  839 Apr 13 09:50 cache-staleness.json
+-rw-r--r-- 1 root root  767 Apr 13 09:50 cross-session-hygiene.json
+-rw-r--r-- 1 root root  319 Apr 13 09:50 fallbacks.json
+-rw-r--r-- 1 root root  328 Apr 13 09:50 model-pinning.json
+-rw-r--r-- 1 root root   29 Apr 13 09:50 temp-orphan.log
+
+
+--- Turn 16/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/output/safety/REPORT.md
+```
+
+[EXECUTING bash]:
+cat /workspace/output/safety/REPORT.md
+
+[OUTPUT]:
+# Safety Verification Bundle Report
+**Release Candidate Check** | Generated: 2026-04-13 09:51:12 UTC
+
+---
+
+## Executive Summary
+
+| Check | Status | Issues Found |
+|-------|--------|--------------|
+| Model Pinning | ✅ PASS | 0 |
+| Fallback Declarations | ✅ PASS | 0 |
+| Cache Staleness | ⚠️ WARNING | 2 |
+| Cross-Session Hygiene | ⚠️ WARNING | 2 |
+
+---
+
+## Detailed Findings
+
+### 1. Model Pinning ✅
+- **Expected Model**: `anthropic-opus-4-5-20251101`
+- **Strict Mode**: Enabled
+- **Config Files Verified**: 
+  - `.openclaw/safety-checks.yaml`
+  - `.claude/safety-checks.yaml`
+- **Status**: All configurations match and are strictly pinned.
+
+### 2. Fallback Declarations ✅
+- **Model Fallback Chain**: primary-model → fallback-model → cached
+- **Storage Fallback Chain**: primary-path → backup-path
+- **Status**: Fallback chains are properly configured.
+
+---
+
+## ⚠️ Issues Requiring Attention
+
+### 3. Cache Staleness (2 items flagged)
+
+| Item | Age | Status | Action |
+|------|-----|--------|--------|
+| fresh_item | 120s | Fresh | None |
+| stale_item | 5400s | Stale | Refresh recommended |
+| critical_item | 9000s | Critical | Immediate refresh required |
+
+**Recommendation**: Invalidate `stale_item` and `critical_item` cache entries before release.
+
+### 4. Cross-Session State Hygiene (2 orphaned artifacts)
+
+| Artifact | Type | Details | Action |
+|----------|------|---------|--------|
+| `.openclaw/safety-checks.lock` | Stale Lock | PID 999999, Marker: LOCK-MARKER-42 | Remove orphaned lock |
+| `output/safety/temp-orphan.log` | Temp Orphan | Marker: TEMP-777 | Clean up temp file |
+
+**Recommendation**: Clean up stale locks and temporary files to ensure clean session state.
+
+---
+
+## Actions Required Before Release
+
+1. [ ] Refresh cache entries: `stale_item`, `critical_item`
+2. [ ] Remove stale lock file: `.openclaw/safety-checks.lock`
+3. [ ] Clean orphaned temp file: `output/safety/temp-orphan.log`
+
+---
+
+*Report generated by Safety Verification Bundle*
+
+
+--- Turn 17/25 ---
+
+[ASSISTANT]:
+
+
+The safety verification bundle has been successfully created. Here's a summary of what was generated in `/workspace/output/safety/`:
+
+**JSON Reports:**
+- `model-pinning.json` - Verifies strict model pinning to `anthropic-opus-4-5-20251101` ✅
+- `fallbacks.json` - Confirms model and storage fallback chains ✅
+- `cache-staleness.json` - Documents 1 fresh, 1 stale (5400s), 1 critical (9000s) item ⚠️
+- `cross-session-hygiene.json` - Flags 2 orphaned artifacts (stale lock, temp file) ⚠️
+
+**Human-Readable Report:**
+- `REPORT.md` - Consolidated summary with executive table and actionable checklist
+
+**Key Findings:**
+- Model pinning and fallbacks are correctly configured
+- Cache contains stale entries requiring refresh before release
+- Cross-session state has orphaned lock/temp files to clean up
+
+TASK_COMPLETE
+
+✅ Agent reported TASK_COMPLETE
+
+Conversation saved to results/repair_run_Qwen3.5-27B_20260413_175034/leegitw-safety-checks_create_medium_003/conversation.json
+
+============================================================
+Running evaluation...
+============================================================
+
+Results for leegitw-safety-checks_create_medium_003:
+  Passed: False
+  Score:  0.00
+  Checks:
+    ❌ required output files exist: Missing: output/safety/model-checks.log, output/safety/fallback-tests.log, output/safety/session-state.log, output/safety/cache-summary.log
+    ❌ model verification content: Model log missing expected keywords or markers
+    ❌ fallback verification content: Fallback log missing expected keywords or markers
+    ❌ session hygiene content: Session log missing expected keywords or markers
+    ❌ cache staleness content: Cache summary missing expected keywords or markers
+
+Cleaning up container 2de6b5cc1ef6...
+Container removed.
+

@@ -1,0 +1,163 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+
+def safe_read(path):
+    try:
+        return Path(path).read_text(encoding='utf-8')
+    except Exception as e:
+        return None, str(e)
+
+
+def norm(s):
+    if s is None:
+        return ''
+    s = s.lower()
+    s = re.sub(r'[^a-z0-9]+', ' ', s)
+    return re.sub(r'\s+', ' ', s).strip()
+
+
+def contains_all(text, needles):
+    t = norm(text)
+    return all(norm(n) in t for n in needles)
+
+
+def main():
+    checks = []
+    ws = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+
+    # 1) Required files exist
+    required = [
+        'IDENTITY.md', 'SOUL.md', 'AGENTS.md', 'USER.md', 'HEARTBEAT.md',
+        'MEMORY.md', 'VALIDATION.md', 'memory'
+    ]
+    try:
+        missing = []
+        for name in required:
+            if not (ws / name).exists():
+                missing.append(name)
+        passed = len(missing) == 0
+        checks.append({
+            'name': 'required_files_exist',
+            'passed': passed,
+            'detail': 'missing: ' + ', '.join(missing) if missing else 'all required files present'
+        })
+    except Exception as e:
+        checks.append({'name': 'required_files_exist', 'passed': False, 'detail': f'exception: {e}'})
+
+    # 2) Identity content
+    try:
+        txt, err = safe_read(ws / 'IDENTITY.md')
+        if txt is None:
+            checks.append({'name': 'identity_content', 'passed': False, 'detail': f'read error: {err}'})
+        else:
+            passed = contains_all(txt, ['ClawPilot', 'AI assistant']) and ('vibe' in norm(txt))
+            checks.append({
+                'name': 'identity_content',
+                'passed': passed,
+                'detail': 'contains agent name and identity cues' if passed else 'missing expected identity details'
+            })
+    except Exception as e:
+        checks.append({'name': 'identity_content', 'passed': False, 'detail': f'exception: {e}'})
+
+    # 3) User profile content
+    try:
+        txt, err = safe_read(ws / 'USER.md')
+        if txt is None:
+            checks.append({'name': 'user_profile_content', 'passed': False, 'detail': f'read error: {err}'})
+        else:
+            passed = contains_all(txt, ['Mira', 'Asia/Singapore'])
+            checks.append({
+                'name': 'user_profile_content',
+                'passed': passed,
+                'detail': 'contains user name and timezone' if passed else 'missing user name or timezone'
+            })
+    except Exception as e:
+        checks.append({'name': 'user_profile_content', 'passed': False, 'detail': f'exception: {e}'})
+
+    # 4) Safety rules in AGENTS.md
+    try:
+        txt, err = safe_read(ws / 'AGENTS.md')
+        if txt is None:
+            checks.append({'name': 'agents_safety_rules', 'passed': False, 'detail': f'read error: {err}'})
+        else:
+            needles = [
+                'ask before destructive',
+                'ask before sending outbound messages',
+                'stop on cli usage errors',
+                'group chats',
+                'delegate'
+            ]
+            passed = contains_all(txt, needles)
+            checks.append({
+                'name': 'agents_safety_rules',
+                'passed': passed,
+                'detail': 'core operating rules present' if passed else 'missing one or more safety/operation rules'
+            })
+    except Exception as e:
+        checks.append({'name': 'agents_safety_rules', 'passed': False, 'detail': f'exception: {e}'})
+
+    # 5) HEARTBEAT.md is minimal and mentions urgent tasks / stale blockers
+    try:
+        txt, err = safe_read(ws / 'HEARTBEAT.md')
+        if txt is None:
+            checks.append({'name': 'heartbeat_content', 'passed': False, 'detail': f'read error: {err}'})
+        else:
+            passed = contains_all(txt, ['urgent', 'stale blockers']) and len(txt.strip()) > 0
+            checks.append({
+                'name': 'heartbeat_content',
+                'passed': passed,
+                'detail': 'heartbeat checklist is present and focused' if passed else 'heartbeat checklist missing required focus'
+            })
+    except Exception as e:
+        checks.append({'name': 'heartbeat_content', 'passed': False, 'detail': f'exception: {e}'})
+
+    # 6) Memory seed exists and contains marker-ish content
+    try:
+        memdir = ws / 'memory'
+        files = sorted([p for p in memdir.glob('*.md')]) if memdir.exists() else []
+        today_file = files[0] if files else None
+        if today_file is None:
+            checks.append({'name': 'memory_seed', 'passed': False, 'detail': 'no daily memory file found'})
+        else:
+            txt, err = safe_read(today_file)
+            if txt is None:
+                checks.append({'name': 'memory_seed', 'passed': False, 'detail': f'read error: {err}'})
+            else:
+                passed = contains_all(txt, ['agent created', 'ClawPilot']) or 'created' in norm(txt)
+                checks.append({
+                    'name': 'memory_seed',
+                    'passed': passed,
+                    'detail': f'found {today_file.name} with seed note' if passed else 'memory seed does not contain expected markers'
+                })
+    except Exception as e:
+        checks.append({'name': 'memory_seed', 'passed': False, 'detail': f'exception: {e}'})
+
+    # 7) Validation file has 5 scenario prompts
+    try:
+        txt, err = safe_read(ws / 'VALIDATION.md')
+        if txt is None:
+            checks.append({'name': 'validation_prompts', 'passed': False, 'detail': f'read error: {err}'})
+        else:
+            count = len(re.findall(r'(?im)^\s*[-*]\s+', txt))
+            passed = count >= 5
+            checks.append({
+                'name': 'validation_prompts',
+                'passed': passed,
+                'detail': f'found {count} bullet-like prompts' if passed else f'only {count} prompts found'
+            })
+    except Exception as e:
+        checks.append({'name': 'validation_prompts', 'passed': False, 'detail': f'exception: {e}'})
+
+    total = len(checks)
+    passed_n = sum(1 for c in checks if c.get('passed'))
+    score = passed_n / total if total else 0.0
+    result = {'passed': passed_n == total, 'score': score, 'checks': checks}
+    print(json.dumps(result, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    main()

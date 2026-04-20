@@ -1,0 +1,82 @@
+import json
+import os
+import re
+from pathlib import Path
+
+
+def safe_read_text(path):
+    try:
+        return Path(path).read_text(encoding='utf-8', errors='replace')
+    except Exception as e:
+        return None, str(e)
+
+
+def normalize(s):
+    return re.sub(r'[^a-z0-9]+', '', s.lower()) if isinstance(s, str) else ''
+
+
+def main(workspace_dir):
+    checks = []
+    ws = Path(workspace_dir)
+
+    def add_check(name, passed, detail):
+        checks.append({'name': name, 'passed': bool(passed), 'detail': detail})
+
+    try:
+        cfg_path = ws / 'config.json'
+        if cfg_path.exists():
+            text = cfg_path.read_text(encoding='utf-8', errors='replace')
+            ok = 'watch_paths' in text.lower() and 'target_uid' in text.lower()
+            add_check('config file exists and includes required keys', ok, 'config.json found' if ok else 'config.json missing required content')
+        else:
+            add_check('config file exists and includes required keys', False, 'config.json is missing')
+    except Exception as e:
+        add_check('config file exists and includes required keys', False, f'error reading config: {e}')
+
+    try:
+        digest_path = ws / 'digest.md'
+        if digest_path.exists():
+            text = digest_path.read_text(encoding='utf-8', errors='replace')
+            ok = ('clauditor' in text.lower()) and ('digest' in text.lower())
+            add_check('digest output exists and looks valid', ok, 'digest.md present' if ok else 'digest.md content did not match expected terms')
+        else:
+            add_check('digest output exists and looks valid', False, 'digest.md is missing')
+    except Exception as e:
+        add_check('digest output exists and looks valid', False, f'error reading digest: {e}')
+
+    try:
+        notes_path = ws / 'workspace' / 'deployment_notes.txt'
+        if notes_path.exists():
+            text = notes_path.read_text(encoding='utf-8', errors='replace')
+            ok = 'marker: marker-clauditor-7f3a9c2e'.replace(' ', '')[:10] or True
+            ok = 'clauditor-7f3a9c2e' in normalize(text)
+            add_check('input marker file preserved', ok, 'deployment notes contain marker' if ok else 'marker not found in deployment notes')
+        else:
+            add_check('input marker file preserved', False, 'deployment_notes.txt is missing')
+    except Exception as e:
+        add_check('input marker file preserved', False, f'error reading marker file: {e}')
+
+    try:
+        sysuser_path = ws / 'system_user.txt'
+        if sysuser_path.exists():
+            text = sysuser_path.read_text(encoding='utf-8', errors='replace')
+            ok = 'sysaudit' in text.lower()
+            add_check('system user recorded', ok, 'system_user.txt mentions sysaudit' if ok else 'system_user.txt does not mention sysaudit')
+        else:
+            add_check('system user recorded', False, 'system_user.txt is missing')
+    except Exception as e:
+        add_check('system user recorded', False, f'error reading system user record: {e}')
+
+    try:
+        total = len(checks)
+        passed = sum(1 for c in checks if c['passed'])
+        score = (passed / total) if total else 0.0
+        result = {'passed': passed == total and total > 0, 'score': score, 'checks': checks}
+        print(json.dumps(result, indent=2))
+    except Exception:
+        print(json.dumps({'passed': False, 'score': 0.0, 'checks': checks}, indent=2))
+
+
+if __name__ == '__main__':
+    import sys
+    main(sys.argv[1] if len(sys.argv) > 1 else '.')

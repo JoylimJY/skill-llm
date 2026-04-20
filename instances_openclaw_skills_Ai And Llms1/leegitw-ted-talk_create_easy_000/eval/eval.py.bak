@@ -1,0 +1,94 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+
+def normalize(s):
+    try:
+        s = s.lower()
+        s = re.sub(r'[^a-z0-9]+', ' ', s)
+        s = re.sub(r'\s+', ' ', s).strip()
+        return s
+    except Exception:
+        return ''
+
+
+def read_text_file(path):
+    try:
+        return Path(path).read_text(encoding='utf-8', errors='ignore')
+    except Exception as e:
+        return None, str(e)
+
+
+def main():
+    checks = []
+    try:
+        ws = Path(sys.argv[1])
+    except Exception as e:
+        result = {"passed": False, "score": 0.0, "checks": [{"name": "workspace arg", "passed": False, "detail": f"invalid workspace argument: {e}"}]}
+        print(json.dumps(result))
+        return
+
+    output_path = ws / 'output.txt'
+    passed = output_path.exists()
+    detail = 'output.txt exists' if passed else 'output.txt is missing'
+    checks.append({"name": "output file exists", "passed": passed, "detail": detail})
+
+    content = ''
+    if passed:
+        try:
+            content = output_path.read_text(encoding='utf-8', errors='ignore')
+        except Exception as e:
+            checks.append({"name": "output readable", "passed": False, "detail": f"could not read output.txt: {e}"})
+            content = ''
+        else:
+            checks.append({"name": "output readable", "passed": True, "detail": "output.txt could be read"})
+    else:
+        checks.append({"name": "output readable", "passed": False, "detail": "skipped because output.txt is missing"})
+
+    norm = normalize(content)
+
+    required_phrases = [
+        'opening',
+        'setup why this matters',
+        'the problem',
+        'core concept',
+        'real world examples',
+        'broader implications',
+        'closing',
+        'q a preparation',
+    ]
+    phrase_hits = 0
+    for phrase in required_phrases:
+        ok = phrase in norm
+        if ok:
+            phrase_hits += 1
+        checks.append({"name": f"contains section {phrase}", "passed": ok, "detail": f"section {'found' if ok else 'not found'}"})
+
+    marker_ok = False
+    try:
+        marker_ok = ('bootstrap observability' in norm) or ('learn normal before enforcing alerts' in norm)
+    except Exception:
+        marker_ok = False
+    checks.append({"name": "includes source markers", "passed": marker_ok, "detail": "found marker-related topic text" if marker_ok else "missing marker-related topic text"})
+
+    length_ok = False
+    try:
+        word_count = len(re.findall(r'\w+', content))
+        length_ok = word_count >= 150
+        checks.append({"name": "sufficient length", "passed": length_ok, "detail": f"word count={word_count}"})
+    except Exception as e:
+        checks.append({"name": "sufficient length", "passed": False, "detail": f"could not count words: {e}"})
+
+    total = len(checks)
+    passed_checks = sum(1 for c in checks if c.get('passed'))
+    score = (passed_checks / total) if total else 0.0
+    overall = all(c.get('passed') for c in checks)
+    result = {"passed": overall, "score": score, "checks": checks}
+    print(json.dumps(result))
+
+
+if __name__ == '__main__':
+    main()

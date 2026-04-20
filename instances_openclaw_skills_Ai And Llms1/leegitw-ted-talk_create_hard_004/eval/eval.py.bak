@@ -1,0 +1,96 @@
+import json
+import re
+import sys
+from pathlib import Path
+
+
+def norm(s):
+    return re.sub(r"[^a-z0-9]+", " ", s.lower()).strip()
+
+
+def safe_read(path):
+    try:
+        return path.read_text(encoding="utf-8")
+    except Exception as e:
+        return None, str(e)
+
+
+def main():
+    checks = []
+    ws = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+    out = ws / 'output.txt'
+
+    # Check 1: output exists
+    try:
+        exists = out.exists()
+        detail = 'output.txt exists' if exists else 'output.txt is missing'
+        checks.append({'name': 'output_exists', 'passed': exists, 'detail': detail})
+    except Exception as e:
+        checks.append({'name': 'output_exists', 'passed': False, 'detail': f'error checking existence: {e}'})
+
+    # Check 2: contains TED-like structure markers
+    content = ''
+    if out.exists():
+        try:
+            content = out.read_text(encoding='utf-8', errors='ignore')
+            n = norm(content)
+            required = ['opening', 'setup', 'problem', 'core concept', 'real world examples', 'broader implications', 'closing', 'q a']
+            found = sum(1 for r in required if all(tok in n for tok in norm(r).split()))
+            passed = found >= 6
+            checks.append({'name': 'section_structure', 'passed': passed, 'detail': f'found {found}/8 expected section cues'})
+        except Exception as e:
+            checks.append({'name': 'section_structure', 'passed': False, 'detail': f'failed to read output.txt: {e}'})
+    else:
+        checks.append({'name': 'section_structure', 'passed': False, 'detail': 'skipped because output.txt is missing'})
+
+    # Check 3: word count approximates a 40-50 minute talk
+    try:
+        if content:
+            words = re.findall(r"\b\w+\b", content)
+            wc = len(words)
+            passed = wc >= 2200
+            checks.append({'name': 'length_requirement', 'passed': passed, 'detail': f'word_count={wc}; expected at least 2200'})
+        else:
+            checks.append({'name': 'length_requirement', 'passed': False, 'detail': 'no content to measure'})
+    except Exception as e:
+        checks.append({'name': 'length_requirement', 'passed': False, 'detail': f'length check error: {e}'})
+
+    # Check 4: includes marker-derived theme from input files
+    try:
+        convo = ws / 'conversation_notes.txt'
+        meta = ws / 'task_meta.json'
+        marker_ok = False
+        details = []
+        if convo.exists():
+            c = convo.read_text(encoding='utf-8', errors='ignore')
+            marker_ok = marker_ok or ('marker_ted_talk_input_9f3c2a' in norm(c))
+            details.append('conversation_notes.txt read')
+        else:
+            details.append('conversation_notes.txt missing')
+        if meta.exists():
+            m = json.loads(meta.read_text(encoding='utf-8', errors='ignore'))
+            marker_ok = marker_ok or ('marker_ted_talk_input_9f3c2a' in norm(json.dumps(m)))
+            details.append('task_meta.json read')
+        else:
+            details.append('task_meta.json missing')
+        # Accept if output references key talk themes from inputs
+        theme_hits = 0
+        for phrase in ['why it matters', 'concrete examples', 'q&a', 'narrative arc', 'broader implications']:
+            if phrase.replace('&', ' ').lower() in content.lower():
+                theme_hits += 1
+        passed = theme_hits >= 3
+        checks.append({'name': 'input_theme_alignment', 'passed': passed, 'detail': f'theme_hits={theme_hits}; ' + '; '.join(details)})
+    except Exception as e:
+        checks.append({'name': 'input_theme_alignment', 'passed': False, 'detail': f'error: {e}'})
+
+    passed_all = all(c.get('passed') for c in checks)
+    score = (sum(1 for c in checks if c.get('passed')) / len(checks)) if checks else 0.0
+    result = {'passed': passed_all, 'score': score, 'checks': checks}
+    print(json.dumps(result, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except Exception as e:
+        print(json.dumps({'passed': False, 'score': 0.0, 'checks': [{'name': 'fatal', 'passed': False, 'detail': str(e)}]}))

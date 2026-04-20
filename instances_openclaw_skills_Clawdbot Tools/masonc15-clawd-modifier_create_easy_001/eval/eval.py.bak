@@ -1,0 +1,85 @@
+import json
+import os
+from pathlib import Path
+
+
+def safe_read(path: Path):
+    try:
+        return path.read_text(encoding='utf-8')
+    except Exception as e:
+        return None, str(e)
+
+
+def normalize(s: str) -> str:
+    return ''.join(ch.lower() for ch in s if ch.isalnum())
+
+
+def main():
+    import sys
+    ws = Path(sys.argv[1])
+    checks = []
+
+    # Check 1: marker file exists and contains expected markers
+    try:
+        marker_path = ws / 'markers' / 'clawd_task_marker.txt'
+        if marker_path.exists():
+            text = marker_path.read_text(encoding='utf-8', errors='replace')
+            passed = ('clawd_task_marker' in normalize(text)) and ('expectedcolorblue' in normalize(text)) and ('expectedvariantwitharms' in normalize(text))
+            detail = 'marker file present and contains expected markers' if passed else f'marker content mismatch: {text[:200]!r}'
+        else:
+            passed = False
+            detail = 'marker file missing'
+    except Exception as e:
+        passed = False
+        detail = f'error checking marker file: {e}'
+    checks.append({'name': 'marker_file', 'passed': passed, 'detail': detail})
+
+    # Check 2: input spec exists and is parseable
+    try:
+        spec_path = ws / 'input_spec.json'
+        if spec_path.exists():
+            data = json.loads(spec_path.read_text(encoding='utf-8', errors='replace'))
+            passed = normalize(str(data.get('target_color', ''))) == 'blue' and normalize(str(data.get('target_variant', ''))) == 'witharms'
+            detail = 'input_spec.json contains expected task parameters' if passed else f'unexpected spec values: {data}'
+        else:
+            passed = False
+            detail = 'input_spec.json missing'
+    except Exception as e:
+        passed = False
+        detail = f'error checking input_spec.json: {e}'
+    checks.append({'name': 'input_spec', 'passed': passed, 'detail': detail})
+
+    # Check 3: expected output file exists
+    try:
+        output_path = ws / 'clawd_customization.txt'
+        if output_path.exists():
+            text = output_path.read_text(encoding='utf-8', errors='replace')
+            norm = normalize(text)
+            passed = ('blue' in norm) and ('arm' in norm)
+            detail = 'output file exists and mentions blue and arms' if passed else f'output content does not mention required properties: {text[:200]!r}'
+        else:
+            passed = False
+            detail = 'clawd_customization.txt missing'
+    except Exception as e:
+        passed = False
+        detail = f'error checking output file: {e}'
+    checks.append({'name': 'output_file', 'passed': passed, 'detail': detail})
+
+    # Check 4: no unexpected crash-prone conditions; workspace should be readable
+    try:
+        files = list(ws.rglob('*'))
+        passed = len(files) >= 2
+        detail = f'workspace contains {len(files)} files/directories' if passed else 'workspace unexpectedly sparse'
+    except Exception as e:
+        passed = False
+        detail = f'error listing workspace: {e}'
+    checks.append({'name': 'workspace_readable', 'passed': passed, 'detail': detail})
+
+    score = sum(1 for c in checks if c['passed']) / len(checks) if checks else 0.0
+    passed = all(c['passed'] for c in checks)
+
+    print(json.dumps({'passed': passed, 'score': score, 'checks': checks}, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    main()

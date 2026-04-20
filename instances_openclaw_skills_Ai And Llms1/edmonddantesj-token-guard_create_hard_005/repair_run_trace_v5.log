@@ -1,0 +1,1163 @@
+Building Docker image...
+Creating new container...
+Container ready: f874f3755f8c
+Workspace files: SKILL.md
+gen_inputs.py
+scripts
+setup.sh
+test_prompts.json
+
+============================================================
+Starting agent interaction (Repair Mode)...
+============================================================
+
+============================================================
+TASK: Implement the TokenGuard engine in `scripts/token_guard.py` (pure Python 3.10+, no dependencies).
+
+**TokenGuard class requirements:**
+1. `check(prompt, model)` → returns decision with: action (proceed/wait/fallback/block), estimated_tokens, wait_seconds, fallback_model, reason
+2. `record_usage(tokens, model)` - track per-model per-minute usage
+3. `cache_response(prompt, response)` - response caching
+4. `record_429(model, retry_delay)` - parse 429 errors
+5. `status()` → dict with models/stats info
+
+**Core logic:**
+- CJK-aware token estimation (CJK chars count more than ASCII)
+- Sliding window quota tracking per model
+- Smart throttle: wait at >80% quota, block at >95%
+- Duplicate detection: block if same prompt seen 3+ times in 60s
+- Auto model fallback on quota issues
+
+Keep implementation concise and focused on core logic.
+============================================================
+
+
+--- Turn 1/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+ls -la /workspace
+```
+
+[EXECUTING bash]:
+ls -la /workspace
+
+[OUTPUT]:
+total 32
+drwxr-xr-x 1 root  root    123 Apr 13 11:59 .
+drwxr-xr-x 1 root  root     46 Apr 13 11:59 ..
+-rw-r--r-- 1 root  root    256 Apr 13 11:59 SKILL.md
+-rw-r--r-- 1 32113 42021  1033 Apr 12 11:18 gen_inputs.py
+drwxr-xr-x 2 root  root     10 Apr 13 11:59 scripts
+-rwxr-xr-x 1 32113 42021    17 Apr 12 11:18 setup.sh
+-rw-r--r-- 1 root  root  17031 Apr 13 11:59 test_prompts.json
+
+
+--- Turn 2/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+ls -la /workspace/scripts && cat /workspace/SKILL.md
+```
+
+[EXECUTING bash]:
+ls -la /workspace/scripts && cat /workspace/SKILL.md
+
+[OUTPUT]:
+total 0
+drwxr-xr-x 2 root root  10 Apr 13 11:59 .
+drwxr-xr-x 1 root root 123 Apr 13 11:59 ..
+# TokenGuard — LLM API 429 Prevention Engine
+
+**Version:** 1.5.0
+
+## Supported Models
+
+- gemini-3-flash (1M TPM)
+- gemini-3-pro (2M TPM)
+- claude-haiku (50K TPM)
+- claude-sonnet (200K TPM)
+- claude-opus (200K TPM)
+- gpt-4o (800K TPM)
+- deepseek (1M TPM)
+
+
+--- Turn 3/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/test_prompts.json
+```
+
+[EXECUTING bash]:
+cat /workspace/test_prompts.json
+
+[OUTPUT]:
+{
+  "short_prompt": "Hello, how are you today?",
+  "medium_prompt": "Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. ",
+  "cjk_prompt": "你好世界。这是一个测试提示词，用于验证CJK字符的token估算功能。你好世界。这是一个测试提示词，用于验证CJK字符的token估算功能。你好世界。这是一个测试提示词，用于验证CJK字符的token估算功能。你好世界。这是一个测试提示词，用于验证CJK字符的token估算功能。你好世界。这是一个测试提示词，用于验证CJK字符的token估算功能。你好世界。这是一个测试提示词，用于验证CJK字符的token估算功能。你好世界。这是一个测试提示词，用于验证CJK字符的token估算功能。你好世界。这是一个测试提示词，用于验证CJK字符的token估算功能。你好世界。这是一个测试提示词，用于验证CJK字符的token估算功能。你好世界。这是一个测试提示词，用于验证CJK字符的token估算功能。",
+  "long_prompt": "This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long ...
+
+--- Turn 4/25 ---
+
+[ASSISTANT]:
+
+
+Now I understand the requirements. Let me create the TokenGuard implementation:
+
+```python
+cat > /workspace/scripts/token_guard.py << 'EOF'
+#!/usr/bin/env python3
+"""TokenGuard - LLM API 429 Prevention Engine"""
+
+import time
+import hashlib
+import unicodedata
+from collections import defaultdict
+from dataclasses import dataclass, field
+from typing import Optional
+
+# Model TPM (tokens per minute) quotas
+MODEL_QUOTAS = {
+    "gemini-3-flash": 1_000_000,
+    "gemini-3-pro": 2_000_000,
+    "claude-haiku": 50_000,
+    "claude-sonnet": 200_000,
+    "claude-opus": 200_000,
+    "gpt-4o": 800_000,
+    "deepseek": 1_000_000,
+}
+
+# Fallback hierarchy (higher priority models first)
+MODEL_FALLBACK = [
+    "deepseek", "gemini-3-flash", "gemini-3-pro",
+    "claude-haiku", "claude-sonnet", "claude-opus", "gpt-4o"
+]
+
+@dataclass
+class Decision:
+    action: str  # proceed/wait/fallback/block
+    estimated_tokens: int
+    wait_seconds: float = 0.0
+    fallback_model: Optional[str] = None
+    reason: str = ...
+
+--- Turn 5/25 ---
+
+[ASSISTANT]:
+
+
+```python
+cat > /workspace/scripts/token_guard.py << 'EOF'
+#!/usr/bin/env python3
+"""TokenGuard - LLM API 429 Prevention Engine"""
+
+import time
+import hashlib
+import unicodedata
+from collections import defaultdict
+from dataclasses import dataclass, field
+from typing import Optional
+
+# Model TPM (tokens per minute) quotas
+MODEL_QUOTAS = {
+    "gemini-3-flash": 1_000_000,
+    "gemini-3-pro": 2_000_000,
+    "claude-haiku": 50_000,
+    "claude-sonnet": 200_000,
+    "claude-opus": 200_000,
+    "gpt-4o": 800_000,
+    "deepseek": 1_000_000,
+}
+
+MODEL_FALLBACK = [
+    "deepseek", "gemini-3-flash", "gemini-3-pro",
+    "claude-haiku", "claude-sonnet", "claude-opus", "gpt-4o"
+]
+
+@dataclass
+class Decision:
+    action: str  # proceed/wait/fallback/block
+    estimated_tokens: int
+    wait_seconds: float = 0.0
+    fallback_model: Optional[str] = None
+    reason: str = ""
+
+
+class TokenGuard:
+    def __init__(self):
+        self._usage: dict[str, list[tuple[float, int]]] = defaultdict(list)
+        se...
+
+[EXECUTING python]:
+cat > /workspace/scripts/token_guard.py << 'EOF'
+#!/usr/bin/env python3
+"""TokenGuard - LLM API 429 Prevention Engine"""
+
+import time
+import hashlib
+import unicodedata
+from collections import defaultdict
+from dataclasses import dataclass, field
+from typing import Optional
+
+# Model TPM (tokens per minute) quotas
+MODEL_QUOTAS = {
+    "gemini-3-flash": 1_000_000,
+    "gemini-3-pro": 2_000_000,
+    "claude-haiku": 50_000,
+    "claude-sonnet": 200_000,
+    "claude-opus": 200_000,
+    "gpt-4o": 800_000,
+    "deepseek": 1_000_000,
+}
+
+MODEL_FALLBACK = [
+    "deepseek", "gemini-3-flash", "gemini-3-pro",
+    "claude-haiku", "claude-sonnet", "claude-opus", "gpt-4o"
+]
+
+@dataclass
+class Decision:
+    action: str  # proceed/wait/fallback/block
+    estimated_tokens: int
+    wait_seconds: float = 0.0
+    fallback_model: Optional[str] = None
+    reason: str = ""
+
+
+class TokenGuard:
+    def __init__(self):
+        self._usage: dict[str, list[tuple[float, int]]] = defaultdict(list)
+        self._prompts: dict[str, list[float]] = defaultdict(list)
+        self._cache: dict[str, str] = {}
+        self._last_429: dict[str, float] = {}
+        self._retry_delays: dict[str, float] = {}
+        self._window_seconds = 60
+
+    def _estimate_tokens(self, text: str) -> int:
+        """CJK-aware token estimation. CJK chars count more than ASCII."""
+        tokens = 0
+        for char in text:
+            if '\u4e00' <= char <= '\u9fff' or \
+               '\u3400' <= char <= '\u4dbf' or \
+               '\u20000' <= char <= '\u2a6df' or \
+               unicodedata.category(char).startswith('Lo'):
+                tokens += 2
+            elif char.isspace():
+                tokens += 0.5
+            else:
+                tokens += 1
+        return int(tokens) + 1
+
+    def _clean_old_entries(self, model: str, current_time: float):
+        """Remove entries older than the sliding window."""
+        cutoff = current_time - self._window_seconds
+        self._usage[model] = [(t, n) for t, n in self._usage[model] if t > cutoff]
+        for prompt_hash in list(self._prompts.keys()):
+            self._prompts[prompt_hash] = [t for t in self._prompts[prompt_hash] if t > cutoff]
+            if not self._prompts[prompt_hash]:
+                del self._prompts[prompt_hash]
+
+    def _get_usage(self, model: str) -> int:
+        """Get current usage for model in the sliding window."""
+        current_time = time.time()
+        self._clean_old_entries(model, current_time)
+        return sum(tokens for _, tokens in self._usage[model])
+
+    def _get_quota(self, model: str) -> int:
+        """Get TPM quota for model."""
+        return MODEL_QUOTAS.get(model, 100_000)
+
+    def _get_fallback_model(self, model: str) -> Optional[str]:
+        """Find a fallback model with available quota."""
+        if model not in MODEL_FALLBACK:
+            return MODEL_FALLBACK[0] if MODEL_FALLBACK else None
+        current_time = time.time()
+        idx = MODEL_FALLBACK.index(model)
+        for i in range(idx + 1, len(MODEL_FALLBACK)):
+            alt = MODEL_FALLBACK[i]
+            usage = self._get_usage(alt)
+            quota = self._get_quota(alt)
+            if usage < quota * 0.8:
+                return alt
+        for i in range(idx):
+            alt = MODEL_FALLBACK[i]
+            usage = self._get_usage(alt)
+            quota = self._get_quota(alt)
+            if usage < quota * 0.8:
+                return alt
+        return None
+
+    def _hash_prompt(self, prompt: str) -> str:
+        """Create hash of prompt for deduplication."""
+        return hashlib.md5(prompt.encode()).hexdigest()
+
+    def check(self, prompt: str, model: str) -> Decision:
+        """Check if request should proceed, wait, fallback, or block."""
+        estimated_tokens = self._estimate_tokens(prompt)
+        current_time = time.time()
+        self._clean_old_entries(model, current_time)
+        
+        prompt_hash = self._hash_prompt(prompt)
+        if prompt_hash in self._cache:
+            return Decision(action="proceed", estimated_tokens=estimated_tokens, reason="cached_response_available")
+        
+        if len(self._prompts[prompt_hash]) >= 3:
+            return Decision(action="block", estimated_tokens=estimated_tokens, reason="duplicate_prompt_detected")
+        
+        self._prompts[prompt_hash].append(current_time)
+        
+        usage = self._get_usage(model)
+        quota = self._get_quota(model)
+        usage_ratio = usage / quota if quota > 0 else 1.0
+        
+        if model in self._last_429:
+            retry_after = self._last_429[model] - current_time
+            if retry_after > 0:
+                return Decision(action="wait", estimated_tokens=estimated_tokens, wait_seconds=retry_after, reason="rate_limit_retry")
+        
+        if usage_ratio > 0.95:
+            return Decision(action="block", estimated_tokens=estimated_tokens, reason=f"quota_exceeded ({usage_ratio:.1%})")
+        
+        if usage_ratio > 0.8:
+            wait_seconds = min(60 * (usage_ratio - 0.8) / 0.2, 30)
+            fallback = self._get_fallback_model(model)
+            if fallback:
+                return Decision(action="fallback", estimated_tokens=estimated_tokens, wait_seconds=wait_seconds, fallback_model=fallback, reason=f"high_usage ({usage_ratio:.1%}), fallback_available")
+            return Decision(action="wait", estimated_tokens=estimated_tokens, wait_seconds=wait_seconds, reason=f"high_usage ({usage_ratio:.1%})")
+        
+        return Decision(action="proceed", estimated_tokens=estimated_tokens, reason="within_quota")
+
+    def record_usage(self, tokens: int, model: str) -> None:
+        """Record token usage for a model."""
+        self._usage[model].append((time.time(), tokens))
+
+    def cache_response(self, prompt: str, response: str) -> None:
+        """Cache a response for the given prompt."""
+        self._cache[self._hash_prompt(prompt)] = response
+
+    def record_429(self, model: str, retry_delay: float) -> None:
+        """Record a 429 error and its retry delay."""
+        self._last_429[model] = time.time() + retry_delay
+        self._retry_delays[model] = retry_delay
+
+    def status(self) -> dict:
+        """Return status dict with models/stats info."""
+        current_time = time.time()
+        models_info = {}
+        for model in MODEL_QUOTAS:
+            self._clean_old_entries(model, current_time)
+            usage = self._get_usage(model)
+            quota = self._get_quota(model)
+            models_info[model] = {
+                "quota": quota,
+                "usage": usage,
+                "usage_ratio": usage / quota if quota > 0 else 0,
+                "last_429": self._last_429.get(model),
+                "retry_delay": self._retry_delays.get(model, 0)
+            }
+        return {
+            "models": models_info,
+            "cache_size": len(self._cache),
+            "tracked_prompts": len(self._prompts),
+            "window_seconds": self._window_seconds
+        }
+EOF
+
+[OUTPUT]:
+[EXIT CODE: 1]
+  File "/tmp/_agent_script.py", line 1
+    cat > /workspace/scripts/token_guard.py << 'EOF'
+          ^
+SyntaxError: invalid syntax
+
+
+--- Turn 6/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat > /workspace/scripts/token_guard.py << 'EOF'
+#!/usr/bin/env python3
+"""TokenGuard - LLM API 429 Prevention Engine"""
+
+import time
+import hashlib
+import unicodedata
+from collections import defaultdict
+from dataclasses import dataclass
+from typing import Optional
+
+# Model TPM (tokens per minute) quotas
+MODEL_QUOTAS = {
+    "gemini-3-flash": 1_000_000,
+    "gemini-3-pro": 2_000_000,
+    "claude-haiku": 50_000,
+    "claude-sonnet": 200_000,
+    "claude-opus": 200_000,
+    "gpt-4o": 800_000,
+    "deepseek": 1_000_000,
+}
+
+MODEL_FALLBACK = [
+    "deepseek", "gemini-3-flash", "gemini-3-pro",
+    "claude-haiku", "claude-sonnet", "claude-opus", "gpt-4o"
+]
+
+@dataclass
+class Decision:
+    action: str  # proceed/wait/fallback/block
+    estimated_tokens: int
+    wait_seconds: float = 0.0
+    fallback_model: Optional[str] = None
+    reason: str = ""
+
+
+class TokenGuard:
+    def __init__(self):
+        self._usage: dict[str, list[tuple[float, int]]] = defaultdict(list)
+        self._promp...
+
+[EXECUTING bash]:
+cat > /workspace/scripts/token_guard.py << 'EOF'
+#!/usr/bin/env python3
+"""TokenGuard - LLM API 429 Prevention Engine"""
+
+import time
+import hashlib
+import unicodedata
+from collections import defaultdict
+from dataclasses import dataclass
+from typing import Optional
+
+# Model TPM (tokens per minute) quotas
+MODEL_QUOTAS = {
+    "gemini-3-flash": 1_000_000,
+    "gemini-3-pro": 2_000_000,
+    "claude-haiku": 50_000,
+    "claude-sonnet": 200_000,
+    "claude-opus": 200_000,
+    "gpt-4o": 800_000,
+    "deepseek": 1_000_000,
+}
+
+MODEL_FALLBACK = [
+    "deepseek", "gemini-3-flash", "gemini-3-pro",
+    "claude-haiku", "claude-sonnet", "claude-opus", "gpt-4o"
+]
+
+@dataclass
+class Decision:
+    action: str  # proceed/wait/fallback/block
+    estimated_tokens: int
+    wait_seconds: float = 0.0
+    fallback_model: Optional[str] = None
+    reason: str = ""
+
+
+class TokenGuard:
+    def __init__(self):
+        self._usage: dict[str, list[tuple[float, int]]] = defaultdict(list)
+        self._prompts: dict[str, list[float]] = defaultdict(list)
+        self._cache: dict[str, str] = {}
+        self._last_429: dict[str, float] = {}
+        self._retry_delays: dict[str, float] = {}
+        self._window_seconds = 60
+
+    def _estimate_tokens(self, text: str) -> int:
+        """CJK-aware token estimation. CJK chars count more than ASCII."""
+        tokens = 0
+        for char in text:
+            if '\u4e00' <= char <= '\u9fff' or \
+               '\u3400' <= char <= '\u4dbf' or \
+               '\u20000' <= char <= '\u2a6df' or \
+               unicodedata.category(char).startswith('Lo'):
+                tokens += 2
+            elif char.isspace():
+                tokens += 0.5
+            else:
+                tokens += 1
+        return int(tokens) + 1
+
+    def _clean_old_entries(self, model: str, current_time: float):
+        """Remove entries older than the sliding window."""
+        cutoff = current_time - self._window_seconds
+        self._usage[model] = [(t, n) for t, n in self._usage[model] if t > cutoff]
+        for prompt_hash in list(self._prompts.keys()):
+            self._prompts[prompt_hash] = [t for t in self._prompts[prompt_hash] if t > cutoff]
+            if not self._prompts[prompt_hash]:
+                del self._prompts[prompt_hash]
+
+    def _get_usage(self, model: str) -> int:
+        """Get current usage for model in the sliding window."""
+        current_time = time.time()
+        self._clean_old_entries(model, current_time)
+        return sum(tokens for _, tokens in self._usage[model])
+
+    def _get_quota(self, model: str) -> int:
+        """Get TPM quota for model."""
+        return MODEL_QUOTAS.get(model, 100_000)
+
+    def _get_fallback_model(self, model: str) -> Optional[str]:
+        """Find a fallback model with available quota."""
+        if model not in MODEL_FALLBACK:
+            return MODEL_FALLBACK[0] if MODEL_FALLBACK else None
+        current_time = time.time()
+        idx = MODEL_FALLBACK.index(model)
+        for i in range(idx + 1, len(MODEL_FALLBACK)):
+            alt = MODEL_FALLBACK[i]
+            usage = self._get_usage(alt)
+            quota = self._get_quota(alt)
+            if usage < quota * 0.8:
+                return alt
+        for i in range(idx):
+            alt = MODEL_FALLBACK[i]
+            usage = self._get_usage(alt)
+            quota = self._get_quota(alt)
+            if usage < quota * 0.8:
+                return alt
+        return None
+
+    def _hash_prompt(self, prompt: str) -> str:
+        """Create hash of prompt for deduplication."""
+        return hashlib.md5(prompt.encode()).hexdigest()
+
+    def check(self, prompt: str, model: str) -> Decision:
+        """Check if request should proceed, wait, fallback, or block."""
+        estimated_tokens = self._estimate_tokens(prompt)
+        current_time = time.time()
+        self._clean_old_entries(model, current_time)
+        
+        prompt_hash = self._hash_prompt(prompt)
+        if prompt_hash in self._cache:
+            return Decision(action="proceed", estimated_tokens=estimated_tokens, reason="cached_response_available")
+        
+        if len(self._prompts[prompt_hash]) >= 3:
+            return Decision(action="block", estimated_tokens=estimated_tokens, reason="duplicate_prompt_detected")
+        
+        self._prompts[prompt_hash].append(current_time)
+        
+        usage = self._get_usage(model)
+        quota = self._get_quota(model)
+        usage_ratio = usage / quota if quota > 0 else 1.0
+        
+        if model in self._last_429:
+            retry_after = self._last_429[model] - current_time
+            if retry_after > 0:
+                return Decision(action="wait", estimated_tokens=estimated_tokens, wait_seconds=retry_after, reason="rate_limit_retry")
+        
+        if usage_ratio > 0.95:
+            return Decision(action="block", estimated_tokens=estimated_tokens, reason=f"quota_exceeded ({usage_ratio:.1%})")
+        
+        if usage_ratio > 0.8:
+            wait_seconds = min(60 * (usage_ratio - 0.8) / 0.2, 30)
+            fallback = self._get_fallback_model(model)
+            if fallback:
+                return Decision(action="fallback", estimated_tokens=estimated_tokens, wait_seconds=wait_seconds, fallback_model=fallback, reason=f"high_usage ({usage_ratio:.1%}), fallback_available")
+            return Decision(action="wait", estimated_tokens=estimated_tokens, wait_seconds=wait_seconds, reason=f"high_usage ({usage_ratio:.1%})")
+        
+        return Decision(action="proceed", estimated_tokens=estimated_tokens, reason="within_quota")
+
+    def record_usage(self, tokens: int, model: str) -> None:
+        """Record token usage for a model."""
+        self._usage[model].append((time.time(), tokens))
+
+    def cache_response(self, prompt: str, response: str) -> None:
+        """Cache a response for the given prompt."""
+        self._cache[self._hash_prompt(prompt)] = response
+
+    def record_429(self, model: str, retry_delay: float) -> None:
+        """Record a 429 error and its retry delay."""
+        self._last_429[model] = time.time() + retry_delay
+        self._retry_delays[model] = retry_delay
+
+    def status(self) -> dict:
+        """Return status dict with models/stats info."""
+        current_time = time.time()
+        models_info = {}
+        for model in MODEL_QUOTAS:
+            self._clean_old_entries(model, current_time)
+            usage = self._get_usage(model)
+            quota = self._get_quota(model)
+            models_info[model] = {
+                "quota": quota,
+                "usage": usage,
+                "usage_ratio": usage / quota if quota > 0 else 0,
+                "last_429": self._last_429.get(model),
+                "retry_delay": self._retry_delays.get(model, 0)
+            }
+        return {
+            "models": models_info,
+            "cache_size": len(self._cache),
+            "tracked_prompts": len(self._prompts),
+            "window_seconds": self._window_seconds
+        }
+EOF
+
+[OUTPUT]:
+[Command completed successfully with no output]
+
+--- Turn 7/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+python3 -c "
+from scripts.token_guard import TokenGuard, Decision
+tg = TokenGuard()
+
+# Test basic check
+d = tg.check('Hello world', 'gpt-4o')
+print(f'Check result: action={d.action}, tokens={d.estimated_tokens}, reason={d.reason}')
+
+# Test CJK estimation
+d = tg.check('你好世界', 'gpt-4o')
+print(f'CJK check: tokens={d.estimated_tokens}')
+
+# Test record usage
+tg.record_usage(100, 'gpt-4o')
+print(f'Usage recorded')
+
+# Test cache
+tg.cache_response('Hello world', 'Cached response')
+d = tg.check('Hello world', 'gpt-4o')
+print(f'Cached check: reason={d.reason}')
+
+# Test 429 recording
+tg.record_429('gpt-4o', 5.0)
+d = tg.check('New prompt', 'gpt-4o')
+print(f'429 check: action={d.action}, wait={d.wait_seconds}')
+
+# Test status
+s = tg.status()
+print(f'Status: models={len(s[\"models\"])}, cache={s[\"cache_size\"]}')
+print('All tests passed!')
+"
+```
+
+[EXECUTING bash]:
+python3 -c "
+from scripts.token_guard import TokenGuard, Decision
+tg = TokenGuard()
+
+# Test basic check
+d = tg.check('Hello world', 'gpt-4o')
+print(f'Check result: action={d.action}, tokens={d.estimated_tokens}, reason={d.reason}')
+
+# Test CJK estimation
+d = tg.check('你好世界', 'gpt-4o')
+print(f'CJK check: tokens={d.estimated_tokens}')
+
+# Test record usage
+tg.record_usage(100, 'gpt-4o')
+print(f'Usage recorded')
+
+# Test cache
+tg.cache_response('Hello world', 'Cached response')
+d = tg.check('Hello world', 'gpt-4o')
+print(f'Cached check: reason={d.reason}')
+
+# Test 429 recording
+tg.record_429('gpt-4o', 5.0)
+d = tg.check('New prompt', 'gpt-4o')
+print(f'429 check: action={d.action}, wait={d.wait_seconds}')
+
+# Test status
+s = tg.status()
+print(f'Status: models={len(s[\"models\"])}, cache={s[\"cache_size\"]}')
+print('All tests passed!')
+"
+
+[OUTPUT]:
+Check result: action=proceed, tokens=11, reason=within_quota
+CJK check: tokens=9
+Usage recorded
+Cached check: reason=cached_response_available
+429 check: action=wait, wait=4.999992609024048
+Status: models=7, cache=1
+All tests passed!
+
+
+--- Turn 8/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+python3 -c "
+from scripts.token_guard import TokenGuard
+import time
+
+tg = TokenGuard()
+prompt = 'Test duplicate'
+
+# Test duplicate detection (3+ times in 60s)
+for i in range(4):
+    d = tg.check(prompt, 'gpt-4o')
+    print(f'Attempt {i+1}: action={d.action}, reason={d.reason}')
+
+print()
+
+# Test quota-based blocking
+tg2 = TokenGuard()
+# Simulate high usage
+quota = tg2._get_quota('claude-haiku')  # 50000
+for _ in range(45000):  # 90% of quota
+    tg2.record_usage(1, 'claude-haiku')
+
+d = tg2.check('Test', 'claude-haiku')
+print(f'High usage (90%): action={d.action}, reason={d.reason}')
+
+# Test fallback
+tg3 = TokenGuard()
+for _ in range(40000):  # 80% of claude-haiku
+    tg3.record_usage(1, 'claude-haiku')
+d = tg3.check('Test', 'claude-haiku')
+print(f'At 80% with fallback: action={d.action}, fallback={d.fallback_model}')
+
+print()
+print('All advanced tests passed!')
+"
+```
+
+[EXECUTING bash]:
+python3 -c "
+from scripts.token_guard import TokenGuard
+import time
+
+tg = TokenGuard()
+prompt = 'Test duplicate'
+
+# Test duplicate detection (3+ times in 60s)
+for i in range(4):
+    d = tg.check(prompt, 'gpt-4o')
+    print(f'Attempt {i+1}: action={d.action}, reason={d.reason}')
+
+print()
+
+# Test quota-based blocking
+tg2 = TokenGuard()
+# Simulate high usage
+quota = tg2._get_quota('claude-haiku')  # 50000
+for _ in range(45000):  # 90% of quota
+    tg2.record_usage(1, 'claude-haiku')
+
+d = tg2.check('Test', 'claude-haiku')
+print(f'High usage (90%): action={d.action}, reason={d.reason}')
+
+# Test fallback
+tg3 = TokenGuard()
+for _ in range(40000):  # 80% of claude-haiku
+    tg3.record_usage(1, 'claude-haiku')
+d = tg3.check('Test', 'claude-haiku')
+print(f'At 80% with fallback: action={d.action}, fallback={d.fallback_model}')
+
+print()
+print('All advanced tests passed!')
+"
+
+[OUTPUT]:
+Attempt 1: action=proceed, reason=within_quota
+Attempt 2: action=proceed, reason=within_quota
+Attempt 3: action=proceed, reason=within_quota
+Attempt 4: action=block, reason=duplicate_prompt_detected
+
+High usage (90%): action=fallback, reason=high_usage (90.0%), fallback_available
+At 80% with fallback: action=proceed, fallback=None
+
+All advanced tests passed!
+
+
+--- Turn 9/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/scripts/token_guard.py | head -50
+```
+
+[EXECUTING bash]:
+cat /workspace/scripts/token_guard.py | head -50
+
+[OUTPUT]:
+#!/usr/bin/env python3
+"""TokenGuard - LLM API 429 Prevention Engine"""
+
+import time
+import hashlib
+import unicodedata
+from collections import defaultdict
+from dataclasses import dataclass
+from typing import Optional
+
+# Model TPM (tokens per minute) quotas
+MODEL_QUOTAS = {
+    "gemini-3-flash": 1_000_000,
+    "gemini-3-pro": 2_000_000,
+    "claude-haiku": 50_000,
+    "claude-sonnet": 200_000,
+    "claude-opus": 200_000,
+    "gpt-4o": 800_000,
+    "deepseek": 1_000_000,
+}
+
+MODEL_FALLBACK = [
+    "deepseek", "gemini-3-flash", "gemini-3-pro",
+    "claude-haiku", "claude-sonnet", "claude-opus", "gpt-4o"
+]
+
+@dataclass
+class Decision:
+    action: str  # proceed/wait/fallback/block
+    estimated_tokens: int
+    wait_seconds: float = 0.0
+    fallback_model: Optional[str] = None
+    reason: str = ""
+
+
+class TokenGuard:
+    def __init__(self):
+        self._usage: dict[str, list[tuple[float, int]]] = defaultdict(list)
+        self._prompts: dict[str, list[float]] = defaultdict(list)
+        self._cache: dict[str, str] = {}
+        self._last_429: dict[str, float] = {}
+        self._retry_delays: dict[str, float] = {}
+        self._window_seconds = 60
+
+    def _estimate_tokens(self, text: str) -> int:
+        """CJK-aware token estimation. CJK chars count more than ASCII."""
+        tokens = 0
+        for char in text:
+            if '\u4e00' <= char <= '\u9fff' or \
+               '\u3400' <= char <= '\u4dbf' or \
+
+
+--- Turn 10/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+wc -l /workspace/scripts/token_guard.py && python3 -m py_compile /workspace/scripts/token_guard.py && echo "Syntax OK"
+```
+
+[EXECUTING bash]:
+wc -l /workspace/scripts/token_guard.py && python3 -m py_compile /workspace/scripts/token_guard.py && echo "Syntax OK"
+
+[OUTPUT]:
+172 /workspace/scripts/token_guard.py
+Syntax OK
+
+
+--- Turn 11/25 ---
+
+[ASSISTANT]:
+
+
+The TokenGuard implementation is complete. Let me verify all requirements are met:
+
+```bash
+python3 -c "
+from scripts.token_guard import TokenGuard, Decision
+
+# Verify all methods exist and work
+tg = TokenGuard()
+
+# 1. check(prompt, model) → Decision
+d = tg.check('test', 'gpt-4o')
+assert hasattr(d, 'action') and d.action in ['proceed', 'wait', 'fallback', 'block']
+assert hasattr(d, 'estimated_tokens')
+assert hasattr(d, 'wait_seconds')
+assert hasattr(d, 'fallback_model')
+assert hasattr(d, 'reason')
+print('✓ check() returns Decision with all required fields')
+
+# 2. record_usage(tokens, model)
+tg.record_usage(100, 'gpt-4o')
+print('✓ record_usage() works')
+
+# 3. cache_response(prompt, response)
+tg.cache_response('prompt', 'response')
+print('✓ cache_response() works')
+
+# 4. record_429(model, retry_delay)
+tg.record_429('gpt-4o', 10.0)
+print('✓ record_429() works')
+
+# 5. status() → dict
+s = tg.status()
+assert 'models' in s
+assert 'cache_size' in s
+print('✓ status() returns dict with models/...
+
+[EXECUTING bash]:
+python3 -c "
+from scripts.token_guard import TokenGuard, Decision
+
+# Verify all methods exist and work
+tg = TokenGuard()
+
+# 1. check(prompt, model) → Decision
+d = tg.check('test', 'gpt-4o')
+assert hasattr(d, 'action') and d.action in ['proceed', 'wait', 'fallback', 'block']
+assert hasattr(d, 'estimated_tokens')
+assert hasattr(d, 'wait_seconds')
+assert hasattr(d, 'fallback_model')
+assert hasattr(d, 'reason')
+print('✓ check() returns Decision with all required fields')
+
+# 2. record_usage(tokens, model)
+tg.record_usage(100, 'gpt-4o')
+print('✓ record_usage() works')
+
+# 3. cache_response(prompt, response)
+tg.cache_response('prompt', 'response')
+print('✓ cache_response() works')
+
+# 4. record_429(model, retry_delay)
+tg.record_429('gpt-4o', 10.0)
+print('✓ record_429() works')
+
+# 5. status() → dict
+s = tg.status()
+assert 'models' in s
+assert 'cache_size' in s
+print('✓ status() returns dict with models/stats')
+
+# Core logic verification
+# CJK-aware token estimation
+ascii_tokens = tg._estimate_tokens('Hello')
+cjk_tokens = tg._estimate_tokens('你好')
+assert cjk_tokens > ascii_tokens, 'CJK should count more'
+print('✓ CJK-aware token estimation')
+
+# Sliding window (60s)
+assert tg._window_seconds == 60
+print('✓ Sliding window quota tracking')
+
+# Duplicate detection
+tg2 = TokenGuard()
+for i in range(4):
+    d = tg2.check('duplicate', 'gpt-4o')
+assert d.action == 'block' and 'duplicate' in d.reason
+print('✓ Duplicate detection (3+ times in 60s)')
+
+# Smart throttle thresholds
+tg3 = TokenGuard()
+tg3.record_usage(42000, 'claude-haiku')  # 84%
+d = tg3.check('test', 'claude-haiku')
+assert d.action in ['wait', 'fallback']
+print('✓ Smart throttle at >80% quota')
+
+print()
+print('All requirements verified!')
+"
+
+[OUTPUT]:
+[EXIT CODE: 1]
+✓ check() returns Decision with all required fields
+✓ record_usage() works
+✓ cache_response() works
+✓ record_429() works
+✓ status() returns dict with models/stats
+Traceback (most recent call last):
+  File "<string>", line 38, in <module>
+AssertionError: CJK should count more
+
+
+--- Turn 12/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+python3 -c "
+from scripts.token_guard import TokenGuard
+tg = TokenGuard()
+ascii_tokens = tg._estimate_tokens('Hello')
+cjk_tokens = tg._estimate_tokens('你好')
+print(f'ASCII tokens (Hello): {ascii_tokens}')
+print(f'CJK tokens (你好): {cjk_tokens}')
+print(f'CJK per char: {cjk_tokens/2}, ASCII per char: {ascii_tokens/5}')
+"
+```
+
+[EXECUTING bash]:
+python3 -c "
+from scripts.token_guard import TokenGuard
+tg = TokenGuard()
+ascii_tokens = tg._estimate_tokens('Hello')
+cjk_tokens = tg._estimate_tokens('你好')
+print(f'ASCII tokens (Hello): {ascii_tokens}')
+print(f'CJK tokens (你好): {cjk_tokens}')
+print(f'CJK per char: {cjk_tokens/2}, ASCII per char: {ascii_tokens/5}')
+"
+
+[OUTPUT]:
+ASCII tokens (Hello): 6
+CJK tokens (你好): 5
+CJK per char: 2.5, ASCII per char: 1.2
+
+
+--- Turn 13/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+python3 -c "
+from scripts.token_guard import TokenGuard
+
+tg = TokenGuard()
+
+# CJK-aware token estimation - compare equal length
+ascii_tokens = tg._estimate_tokens('Hello')  # 5 chars
+cjk_tokens = tg._estimate_tokens('你好世界')  # 4 chars
+print(f'ASCII tokens (Hello, 5 chars): {ascii_tokens}')
+print(f'CJK tokens (你好世界，4 chars): {cjk_tokens}')
+print(f'CJK per char: ~{cjk_tokens/4:.1f}, ASCII per char: ~{ascii_tokens/5:.1f}')
+
+# Verify CJK chars count more per character
+assert cjk_tokens/4 > ascii_tokens/5, 'CJK should count more per char'
+print('✓ CJK-aware token estimation works correctly')
+
+# Full verification
+tg2 = TokenGuard()
+d = tg2.check('test', 'gpt-4o')
+assert hasattr(d, 'action') and d.action in ['proceed', 'wait', 'fallback', 'block']
+print('✓ check() returns Decision with all required fields')
+
+tg2.record_usage(100, 'gpt-4o')
+print('✓ record_usage() works')
+
+tg2.cache_response('prompt', 'response')
+print('✓ cache_response() works')
+
+tg2.record_429('gpt-4o', 10.0)
+print...
+
+[EXECUTING bash]:
+python3 -c "
+from scripts.token_guard import TokenGuard
+
+tg = TokenGuard()
+
+# CJK-aware token estimation - compare equal length
+ascii_tokens = tg._estimate_tokens('Hello')  # 5 chars
+cjk_tokens = tg._estimate_tokens('你好世界')  # 4 chars
+print(f'ASCII tokens (Hello, 5 chars): {ascii_tokens}')
+print(f'CJK tokens (你好世界，4 chars): {cjk_tokens}')
+print(f'CJK per char: ~{cjk_tokens/4:.1f}, ASCII per char: ~{ascii_tokens/5:.1f}')
+
+# Verify CJK chars count more per character
+assert cjk_tokens/4 > ascii_tokens/5, 'CJK should count more per char'
+print('✓ CJK-aware token estimation works correctly')
+
+# Full verification
+tg2 = TokenGuard()
+d = tg2.check('test', 'gpt-4o')
+assert hasattr(d, 'action') and d.action in ['proceed', 'wait', 'fallback', 'block']
+print('✓ check() returns Decision with all required fields')
+
+tg2.record_usage(100, 'gpt-4o')
+print('✓ record_usage() works')
+
+tg2.cache_response('prompt', 'response')
+print('✓ cache_response() works')
+
+tg2.record_429('gpt-4o', 10.0)
+print('✓ record_429() works')
+
+s = tg2.status()
+assert 'models' in s and 'cache_size' in s
+print('✓ status() returns dict with models/stats')
+
+tg3 = TokenGuard()
+for i in range(4):
+    d = tg3.check('duplicate', 'gpt-4o')
+assert d.action == 'block' and 'duplicate' in d.reason
+print('✓ Duplicate detection (3+ times in 60s)')
+
+tg4 = TokenGuard()
+tg4.record_usage(42000, 'claude-haiku')  # 84%
+d = tg4.check('test', 'claude-haiku')
+assert d.action in ['wait', 'fallback']
+print('✓ Smart throttle at >80% quota')
+
+print()
+print('All requirements verified!')
+"
+
+[OUTPUT]:
+ASCII tokens (Hello, 5 chars): 6
+CJK tokens (你好世界，4 chars): 9
+CJK per char: ~2.2, ASCII per char: ~1.2
+✓ CJK-aware token estimation works correctly
+✓ check() returns Decision with all required fields
+✓ record_usage() works
+✓ cache_response() works
+✓ record_429() works
+✓ status() returns dict with models/stats
+✓ Duplicate detection (3+ times in 60s)
+✓ Smart throttle at >80% quota
+
+All requirements verified!
+
+
+--- Turn 14/25 ---
+
+[ASSISTANT]:
+
+
+The TokenGuard implementation is complete and all requirements are verified:
+
+1. **`check(prompt, model)`** → Returns `Decision` with action (proceed/wait/fallback/block), estimated_tokens, wait_seconds, fallback_model, reason ✓
+2. **`record_usage(tokens, model)`** → Tracks per-model per-minute usage ✓
+3. **`cache_response(prompt, response)`** → Response caching ✓
+4. **`record_429(model, retry_delay)`** → Parses 429 errors ✓
+5. **`status()`** → Returns dict with models/stats info ✓
+
+**Core logic implemented:**
+- CJK-aware token estimation (CJK chars count ~2.2x more than ASCII) ✓
+- Sliding window quota tracking (60s window) per model ✓
+- Smart throttle: wait at >80% quota, block at >95% ✓
+- Duplicate detection: block if same prompt seen 3+ times in 60s ✓
+- Auto model fallback on quota issues ✓
+
+TASK_COMPLETE
+
+✅ Agent reported TASK_COMPLETE
+
+Conversation saved to results/repair_run_Qwen3.5-27B_20260413_195911/edmonddantesj-token-guard_create_hard_005/conversation.json
+
+============================================================
+Running evaluation...
+============================================================
+
+Results for edmonddantesj-token-guard_create_hard_005:
+  Passed: True
+  Score:  1.00
+  Checks:
+    ✅ file_exists: scripts/token_guard.py exists
+    ✅ module_loads: Module imported successfully
+    ✅ has_tokenguard_class: TokenGuard class found
+    ✅ check_returns_valid_action: action=proceed
+    ✅ cjk_aware_estimation: ascii_tokens=101, cjk_tokens=201
+    ✅ duplicate_detection_blocks: actions over 4 identical calls: ['proceed', 'proceed', 'proceed', 'block']
+    ✅ status_output_structure: has_models=True, has_stats=True, has_usage_fields=True
+    ✅ record_429_and_cache_response_callable: record_429=True, cache_response=True
+
+Cleaning up container f874f3755f8c...
+Container removed.
+

@@ -1,0 +1,782 @@
+Building Docker image...
+Creating new container...
+Container ready: d29d5967aafe
+Workspace files: gen_inputs.py
+marker_document.pdf
+marker_image.png
+output
+session_input.json
+setup.sh
+
+============================================================
+Starting agent interaction (Repair Mode)...
+============================================================
+
+============================================================
+TASK: I'm in a repo with the TokenGuard skill installed. Please create a small, production-style reporting utility that summarizes session spending and emits both a human-readable report and a machine-readable JSON summary. Requirements: the utility should read the existing TokenGuard session data, include the current limit, spent amount, remaining budget, number of logged entries, and a warning if the session is above 80% of the limit. Also add a deterministic sample input file and ensure the report clearly references the marker value from that input. I need this to be runnable from the project root with minimal setup.
+
+**Output Requirements:**
+- Create a Python script named `tokenguard_report.py` in the workspace root
+- When run, it should generate these files in the workspace root:
+  - `tokenguard_report.txt` - Human-readable text report
+  - `tokenguard_report.json` - Machine-readable JSON summary
+  - `tokenguard_summary.md` - Markdown summary with key metrics
+- The script should read from `session_input.json` by default
+============================================================
+
+
+--- Turn 1/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+ls -la /workspace
+```
+
+[EXECUTING bash]:
+ls -la /workspace
+
+[OUTPUT]:
+total 20
+drwxr-xr-x 3 root  root   162 Apr 13 13:03 .
+drwxr-xr-x 1 root  root    31 Apr 13 13:03 ..
+-rw-r--r-- 1 32113 42021 1139 Apr 12 11:20 gen_inputs.py
+-rw-r--r-- 1 root  root  1448 Apr 13 13:03 marker_document.pdf
+-rw-r--r-- 1 root  root  3256 Apr 13 13:03 marker_image.png
+drwxr-xr-x 2 root  root    10 Apr 13 13:03 output
+-rw-r--r-- 1 root  root   266 Apr 13 13:03 session_input.json
+-rwxr-xr-x 1 32113 42021   53 Apr 12 11:20 setup.sh
+
+
+--- Turn 2/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/session_input.json
+```
+
+[EXECUTING bash]:
+cat /workspace/session_input.json
+
+[OUTPUT]:
+{
+  "limit": 25.0,
+  "spent": 19.5,
+  "entries": [
+    {
+      "amount": 5.0,
+      "description": "Claude Sonnet - planning"
+    },
+    {
+      "amount": 14.5,
+      "description": "Claude Sonnet - implementation"
+    }
+  ],
+  "marker": "TOKENGUARD_MARKER_7F3A9C"
+}
+
+--- Turn 3/25 ---
+
+[ASSISTANT]:
+
+
+Now I understand the input structure. Let me create the reporting utility script.
+
+```python
+cat > /workspace/tokenguard_report.py << 'EOF'
+#!/usr/bin/env python3
+"""
+TokenGuard Session Reporting Utility
+
+Reads TokenGuard session data and generates:
+- Human-readable text report (tokenguard_report.txt)
+- Machine-readable JSON summary (tokenguard_report.json)
+- Markdown summary (tokenguard_summary.md)
+"""
+
+import json
+import sys
+from datetime import datetime
+from pathlib import Path
+
+
+def load_session_data(filepath: str) -> dict:
+    """Load and parse session data from JSON file."""
+    path = Path(filepath)
+    if not path.exists():
+        raise FileNotFoundError(f"Session input file not found: {filepath}")
+    
+    with open(path, 'r') as f:
+        return json.load(f)
+
+
+def calculate_metrics(data: dict) -> dict:
+    """Calculate session metrics from raw data."""
+    limit = float(data.get('limit', 0))
+    spent = float(data.get('spent', 0))
+    remaining = limit - spent
+    percent...
+
+[EXECUTING python]:
+cat > /workspace/tokenguard_report.py << 'EOF'
+#!/usr/bin/env python3
+"""
+TokenGuard Session Reporting Utility
+
+Reads TokenGuard session data and generates:
+- Human-readable text report (tokenguard_report.txt)
+- Machine-readable JSON summary (tokenguard_report.json)
+- Markdown summary (tokenguard_summary.md)
+"""
+
+import json
+import sys
+from datetime import datetime
+from pathlib import Path
+
+
+def load_session_data(filepath: str) -> dict:
+    """Load and parse session data from JSON file."""
+    path = Path(filepath)
+    if not path.exists():
+        raise FileNotFoundError(f"Session input file not found: {filepath}")
+    
+    with open(path, 'r') as f:
+        return json.load(f)
+
+
+def calculate_metrics(data: dict) -> dict:
+    """Calculate session metrics from raw data."""
+    limit = float(data.get('limit', 0))
+    spent = float(data.get('spent', 0))
+    remaining = limit - spent
+    percentage = (spent / limit * 100) if limit > 0 else 0
+    num_entries = len(data.get('entries', []))
+    is_warning = percentage > 80
+    
+    return {
+        'limit': limit,
+        'spent': spent,
+        'remaining': remaining,
+        'percentage': percentage,
+        'num_entries': num_entries,
+        'is_warning': is_warning,
+        'marker': data.get('marker', 'N/A'),
+        'entries': data.get('entries', [])
+    }
+
+
+def generate_text_report(metrics: dict, timestamp: str) -> str:
+    """Generate human-readable text report."""
+    warning_line = ""
+    if metrics['is_warning']:
+        warning_line = f"\n⚠️  WARNING: Session spending is above 80% of limit ({metrics['percentage']:.1f}%)"
+    
+    report = f"""================================================================================
+                    TOKENGUARD SESSION REPORT
+================================================================================
+Generated: {timestamp}
+Session Marker: {metrics['marker']}
+
+--------------------------------------------------------------------------------
+                         SPENDING SUMMARY
+--------------------------------------------------------------------------------
+Current Limit:      ${metrics['limit']:.2f}
+Amount Spent:       ${metrics['spent']:.2f}
+Remaining Budget:   ${metrics['remaining']:.2f}
+Usage Percentage:   {metrics['percentage']:.1f}%
+Logged Entries:     {metrics['num_entries']}
+{warning_line}
+
+--------------------------------------------------------------------------------
+                         ENTRY DETAILS
+--------------------------------------------------------------------------------
+"""
+    
+    for i, entry in enumerate(metrics['entries'], 1):
+        amount = entry.get('amount', 0)
+        description = entry.get('description', 'No description')
+        report += f"  {i}. ${amount:.2f} - {description}\n"
+    
+    report += """
+================================================================================
+                           END OF REPORT
+================================================================================
+"""
+    return report
+
+
+def generate_json_summary(metrics: dict, timestamp: str) -> dict:
+    """Generate machine-readable JSON summary."""
+    return {
+        'report_metadata': {
+            'generated_at': timestamp,
+            'session_marker': metrics['marker']
+        },
+        'spending_summary': {
+            'limit': metrics['limit'],
+            'spent': metrics['spent'],
+            'remaining': metrics['remaining'],
+            'usage_percentage': round(metrics['percentage'], 2)
+        },
+        'session_info': {
+            'num_entries': metrics['num_entries'],
+            'warning_above_80_percent': metrics['is_warning']
+        },
+        'entries': metrics['entries']
+    }
+
+
+def generate_markdown_summary(metrics: dict, timestamp: str) -> str:
+    """Generate Markdown summary with key metrics."""
+    warning_status = "🟡 WARNING" if metrics['is_warning'] else "🟢 OK"
+    warning_msg = f"**⚠️ WARNING**: Spending exceeds 80% of limit!" if metrics['is_warning'] else ""
+    
+    md = f"""# TokenGuard Session Report
+
+> Generated: {timestamp}  
+> **Session Marker**: `{metrics['marker']}`
+
+## Key Metrics
+
+| Metric | Value |
+|--------|-------|
+| Current Limit | ${metrics['limit']:.2f} |
+| Amount Spent | ${metrics['spent']:.2f} |
+| Remaining Budget | ${metrics['remaining']:.2f} |
+| Usage Percentage | {metrics['percentage']:.1f}% |
+| Logged Entries | {metrics['num_entries']} |
+| Status | {warning_status} |
+
+{warning_msg}
+
+## Entry Details
+
+| # | Amount | Description |
+|---|--------|-------------|
+"""
+    
+    for i, entry in enumerate(metrics['entries'], 1):
+        amount = entry.get('amount', 0)
+        description = entry.get('description', 'No description')
+        md += f"| {i} | ${amount:.2f} | {description} |\n"
+    
+    md += f"""
+---
+*Report generated by TokenGuard Reporting Utility*
+"""
+    return md
+
+
+def main(input_file: str = 'session_input.json') -> None:
+    """Main entry point for the reporting utility."""
+    workspace_root = Path(__file__).parent
+    
+    # Load session data
+    print(f"Loading session data from: {input_file}")
+    data = load_session_data(input_file)
+    
+    # Calculate metrics
+    metrics = calculate_metrics(data)
+    
+    # Generate timestamp
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Generate reports
+    text_report = generate_text_report(metrics, timestamp)
+    json_summary = generate_json_summary(metrics, timestamp)
+    markdown_summary = generate_markdown_summary(metrics, timestamp)
+    
+    # Write output files
+    txt_path = workspace_root / 'tokenguard_report.txt'
+    json_path = workspace_root / 'tokenguard_report.json'
+    md_path = workspace_root / 'tokenguard_summary.md'
+    
+    with open(txt_path, 'w') as f:
+        f.write(text_report)
+    print(f"✓ Generated: {txt_path}")
+    
+    with open(json_path, 'w') as f:
+        json.dump(json_summary, f, indent=2)
+    print(f"✓ Generated: {json_path}")
+    
+    with open(md_path, 'w') as f:
+        f.write(markdown_summary)
+    print(f"✓ Generated: {md_path}")
+    
+    # Print summary to console
+    print(f"\n--- Quick Summary ---")
+    print(f"Limit: ${metrics['limit']:.2f} | Spent: ${metrics['spent']:.2f} | Remaining: ${metrics['remaining']:.2f}")
+    print(f"Usage: {metrics['percentage']:.1f}% ({metrics['num_entries']} entries)")
+    if metrics['is_warning']:
+        print(f"⚠️  WARNING: Above 80% threshold!")
+
+
+if __name__ == '__main__':
+    input_file = sys.argv[1] if len(sys.argv) > 1 else 'session_input.json'
+    main(input_file)
+EOF
+
+[OUTPUT]:
+[EXIT CODE: 1]
+  File "/tmp/_agent_script.py", line 1
+    cat > /workspace/tokenguard_report.py << 'EOF'
+          ^
+SyntaxError: invalid syntax
+
+
+--- Turn 4/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat > /workspace/tokenguard_report.py << 'EOF'
+#!/usr/bin/env python3
+"""
+TokenGuard Session Reporting Utility
+
+Reads TokenGuard session data and generates:
+- Human-readable text report (tokenguard_report.txt)
+- Machine-readable JSON summary (tokenguard_report.json)
+- Markdown summary (tokenguard_summary.md)
+"""
+
+import json
+import sys
+from datetime import datetime
+from pathlib import Path
+
+
+def load_session_data(filepath: str) -> dict:
+    """Load and parse session data from JSON file."""
+    path = Path(filepath)
+    if not path.exists():
+        raise FileNotFoundError(f"Session input file not found: {filepath}")
+    
+    with open(path, 'r') as f:
+        return json.load(f)
+
+
+def calculate_metrics(data: dict) -> dict:
+    """Calculate session metrics from raw data."""
+    limit = float(data.get('limit', 0))
+    spent = float(data.get('spent', 0))
+    remaining = limit - spent
+    percentage = (spent / limit * 100) if limit > 0 else 0
+    num_entries = len(data.get('entri...
+
+[EXECUTING bash]:
+cat > /workspace/tokenguard_report.py << 'EOF'
+#!/usr/bin/env python3
+"""
+TokenGuard Session Reporting Utility
+
+Reads TokenGuard session data and generates:
+- Human-readable text report (tokenguard_report.txt)
+- Machine-readable JSON summary (tokenguard_report.json)
+- Markdown summary (tokenguard_summary.md)
+"""
+
+import json
+import sys
+from datetime import datetime
+from pathlib import Path
+
+
+def load_session_data(filepath: str) -> dict:
+    """Load and parse session data from JSON file."""
+    path = Path(filepath)
+    if not path.exists():
+        raise FileNotFoundError(f"Session input file not found: {filepath}")
+    
+    with open(path, 'r') as f:
+        return json.load(f)
+
+
+def calculate_metrics(data: dict) -> dict:
+    """Calculate session metrics from raw data."""
+    limit = float(data.get('limit', 0))
+    spent = float(data.get('spent', 0))
+    remaining = limit - spent
+    percentage = (spent / limit * 100) if limit > 0 else 0
+    num_entries = len(data.get('entries', []))
+    is_warning = percentage > 80
+    
+    return {
+        'limit': limit,
+        'spent': spent,
+        'remaining': remaining,
+        'percentage': percentage,
+        'num_entries': num_entries,
+        'is_warning': is_warning,
+        'marker': data.get('marker', 'N/A'),
+        'entries': data.get('entries', [])
+    }
+
+
+def generate_text_report(metrics: dict, timestamp: str) -> str:
+    """Generate human-readable text report."""
+    warning_line = ""
+    if metrics['is_warning']:
+        warning_line = f"\n⚠️  WARNING: Session spending is above 80% of limit ({metrics['percentage']:.1f}%)"
+    
+    report = f"""================================================================================
+                    TOKENGUARD SESSION REPORT
+================================================================================
+Generated: {timestamp}
+Session Marker: {metrics['marker']}
+
+--------------------------------------------------------------------------------
+                         SPENDING SUMMARY
+--------------------------------------------------------------------------------
+Current Limit:      ${metrics['limit']:.2f}
+Amount Spent:       ${metrics['spent']:.2f}
+Remaining Budget:   ${metrics['remaining']:.2f}
+Usage Percentage:   {metrics['percentage']:.1f}%
+Logged Entries:     {metrics['num_entries']}
+{warning_line}
+
+--------------------------------------------------------------------------------
+                         ENTRY DETAILS
+--------------------------------------------------------------------------------
+"""
+    
+    for i, entry in enumerate(metrics['entries'], 1):
+        amount = entry.get('amount', 0)
+        description = entry.get('description', 'No description')
+        report += f"  {i}. ${amount:.2f} - {description}\n"
+    
+    report += """
+================================================================================
+                           END OF REPORT
+================================================================================
+"""
+    return report
+
+
+def generate_json_summary(metrics: dict, timestamp: str) -> dict:
+    """Generate machine-readable JSON summary."""
+    return {
+        'report_metadata': {
+            'generated_at': timestamp,
+            'session_marker': metrics['marker']
+        },
+        'spending_summary': {
+            'limit': metrics['limit'],
+            'spent': metrics['spent'],
+            'remaining': metrics['remaining'],
+            'usage_percentage': round(metrics['percentage'], 2)
+        },
+        'session_info': {
+            'num_entries': metrics['num_entries'],
+            'warning_above_80_percent': metrics['is_warning']
+        },
+        'entries': metrics['entries']
+    }
+
+
+def generate_markdown_summary(metrics: dict, timestamp: str) -> str:
+    """Generate Markdown summary with key metrics."""
+    warning_status = "🟡 WARNING" if metrics['is_warning'] else "🟢 OK"
+    warning_msg = f"**⚠️ WARNING**: Spending exceeds 80% of limit!" if metrics['is_warning'] else ""
+    
+    md = f"""# TokenGuard Session Report
+
+> Generated: {timestamp}  
+> **Session Marker**: `{metrics['marker']}`
+
+## Key Metrics
+
+| Metric | Value |
+|--------|-------|
+| Current Limit | ${metrics['limit']:.2f} |
+| Amount Spent | ${metrics['spent']:.2f} |
+| Remaining Budget | ${metrics['remaining']:.2f} |
+| Usage Percentage | {metrics['percentage']:.1f}% |
+| Logged Entries | {metrics['num_entries']} |
+| Status | {warning_status} |
+
+{warning_msg}
+
+## Entry Details
+
+| # | Amount | Description |
+|---|--------|-------------|
+"""
+    
+    for i, entry in enumerate(metrics['entries'], 1):
+        amount = entry.get('amount', 0)
+        description = entry.get('description', 'No description')
+        md += f"| {i} | ${amount:.2f} | {description} |\n"
+    
+    md += f"""
+---
+*Report generated by TokenGuard Reporting Utility*
+"""
+    return md
+
+
+def main(input_file: str = 'session_input.json') -> None:
+    """Main entry point for the reporting utility."""
+    workspace_root = Path(__file__).parent
+    
+    # Load session data
+    print(f"Loading session data from: {input_file}")
+    data = load_session_data(input_file)
+    
+    # Calculate metrics
+    metrics = calculate_metrics(data)
+    
+    # Generate timestamp
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Generate reports
+    text_report = generate_text_report(metrics, timestamp)
+    json_summary = generate_json_summary(metrics, timestamp)
+    markdown_summary = generate_markdown_summary(metrics, timestamp)
+    
+    # Write output files
+    txt_path = workspace_root / 'tokenguard_report.txt'
+    json_path = workspace_root / 'tokenguard_report.json'
+    md_path = workspace_root / 'tokenguard_summary.md'
+    
+    with open(txt_path, 'w') as f:
+        f.write(text_report)
+    print(f"✓ Generated: {txt_path}")
+    
+    with open(json_path, 'w') as f:
+        json.dump(json_summary, f, indent=2)
+    print(f"✓ Generated: {json_path}")
+    
+    with open(md_path, 'w') as f:
+        f.write(markdown_summary)
+    print(f"✓ Generated: {md_path}")
+    
+    # Print summary to console
+    print(f"\n--- Quick Summary ---")
+    print(f"Limit: ${metrics['limit']:.2f} | Spent: ${metrics['spent']:.2f} | Remaining: ${metrics['remaining']:.2f}")
+    print(f"Usage: {metrics['percentage']:.1f}% ({metrics['num_entries']} entries)")
+    if metrics['is_warning']:
+        print(f"⚠️  WARNING: Above 80% threshold!")
+
+
+if __name__ == '__main__':
+    input_file = sys.argv[1] if len(sys.argv) > 1 else 'session_input.json'
+    main(input_file)
+EOF
+
+[OUTPUT]:
+[Command completed successfully with no output]
+
+--- Turn 5/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+chmod +x /workspace/tokenguard_report.py && cd /workspace && python3 tokenguard_report.py
+```
+
+[EXECUTING bash]:
+chmod +x /workspace/tokenguard_report.py && cd /workspace && python3 tokenguard_report.py
+
+[OUTPUT]:
+Loading session data from: session_input.json
+✓ Generated: /workspace/tokenguard_report.txt
+✓ Generated: /workspace/tokenguard_report.json
+✓ Generated: /workspace/tokenguard_summary.md
+
+--- Quick Summary ---
+Limit: $25.00 | Spent: $19.50 | Remaining: $5.50
+Usage: 78.0% (2 entries)
+
+
+--- Turn 6/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/tokenguard_report.txt
+```
+
+[EXECUTING bash]:
+cat /workspace/tokenguard_report.txt
+
+[OUTPUT]:
+================================================================================
+                    TOKENGUARD SESSION REPORT
+================================================================================
+Generated: 2026-04-13 13:03:37
+Session Marker: TOKENGUARD_MARKER_7F3A9C
+
+--------------------------------------------------------------------------------
+                         SPENDING SUMMARY
+--------------------------------------------------------------------------------
+Current Limit:      $25.00
+Amount Spent:       $19.50
+Remaining Budget:   $5.50
+Usage Percentage:   78.0%
+Logged Entries:     2
+
+
+--------------------------------------------------------------------------------
+                         ENTRY DETAILS
+--------------------------------------------------------------------------------
+  1. $5.00 - Claude Sonnet - planning
+  2. $14.50 - Claude Sonnet - implementation
+
+================================================================================
+                           END OF REPORT
+================================================================================
+
+
+--- Turn 7/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/tokenguard_report.json
+```
+
+[EXECUTING bash]:
+cat /workspace/tokenguard_report.json
+
+[OUTPUT]:
+{
+  "report_metadata": {
+    "generated_at": "2026-04-13 13:03:37",
+    "session_marker": "TOKENGUARD_MARKER_7F3A9C"
+  },
+  "spending_summary": {
+    "limit": 25.0,
+    "spent": 19.5,
+    "remaining": 5.5,
+    "usage_percentage": 78.0
+  },
+  "session_info": {
+    "num_entries": 2,
+    "warning_above_80_percent": false
+  },
+  "entries": [
+    {
+      "amount": 5.0,
+      "description": "Claude Sonnet - planning"
+    },
+    {
+      "amount": 14.5,
+      "description": "Claude Sonnet - implementation"
+    }
+  ]
+}
+
+--- Turn 8/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/tokenguard_summary.md
+```
+
+[EXECUTING bash]:
+cat /workspace/tokenguard_summary.md
+
+[OUTPUT]:
+# TokenGuard Session Report
+
+> Generated: 2026-04-13 13:03:37  
+> **Session Marker**: `TOKENGUARD_MARKER_7F3A9C`
+
+## Key Metrics
+
+| Metric | Value |
+|--------|-------|
+| Current Limit | $25.00 |
+| Amount Spent | $19.50 |
+| Remaining Budget | $5.50 |
+| Usage Percentage | 78.0% |
+| Logged Entries | 2 |
+| Status | 🟢 OK |
+
+
+
+## Entry Details
+
+| # | Amount | Description |
+|---|--------|-------------|
+| 1 | $5.00 | Claude Sonnet - planning |
+| 2 | $14.50 | Claude Sonnet - implementation |
+
+---
+*Report generated by TokenGuard Reporting Utility*
+
+
+--- Turn 9/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+ls -la /workspace/*.py /workspace/*.txt /workspace/*.json /workspace/*.md 2>/dev/null
+```
+
+[EXECUTING bash]:
+ls -la /workspace/*.py /workspace/*.txt /workspace/*.json /workspace/*.md 2>/dev/null
+
+[OUTPUT]:
+-rw-r--r-- 1 32113 42021 1139 Apr 12 11:20 /workspace/gen_inputs.py
+-rw-r--r-- 1 root  root   266 Apr 13 13:03 /workspace/session_input.json
+-rw-r--r-- 1 root  root   515 Apr 13 13:03 /workspace/tokenguard_report.json
+-rwxr-xr-x 1 root  root  6511 Apr 13 13:03 /workspace/tokenguard_report.py
+-rw-r--r-- 1 root  root  1103 Apr 13 13:03 /workspace/tokenguard_report.txt
+-rw-r--r-- 1 root  root   547 Apr 13 13:03 /workspace/tokenguard_summary.md
+
+
+--- Turn 10/25 ---
+
+[ASSISTANT]:
+
+
+All files have been created successfully. The TokenGuard reporting utility is complete:
+
+**Created Files:**
+- `tokenguard_report.py` - Main Python script (executable)
+- `tokenguard_report.txt` - Human-readable text report
+- `tokenguard_report.json` - Machine-readable JSON summary  
+- `tokenguard_summary.md` - Markdown summary with key metrics
+
+**Features Implemented:**
+- Reads from `session_input.json` by default
+- Displays: current limit ($25.00), spent amount ($19.50), remaining budget ($5.50), logged entries (2), usage percentage (78.0%)
+- References the marker value from input: `TOKENGUARD_MARKER_7F3A9C`
+- Warning system for sessions above 80% of limit
+- Runnable from project root with `python3 tokenguard_report.py`
+
+TASK_COMPLETE
+
+✅ Agent reported TASK_COMPLETE
+
+Conversation saved to results/repair_run_Qwen3.5-27B_20260413_210300/g0head-tokenguard_create_hard_005/conversation.json
+
+============================================================
+Running evaluation...
+============================================================
+
+Results for g0head-tokenguard_create_hard_005:
+  Passed: False
+  Score:  0.75
+  Checks:
+    ✅ text_report: file=tokenguard_report.txt, marker=True, limit=True, spent=True
+    ❌ json_report: file=tokenguard_report.json, marker=False, fields=False, warning_type_ok=False
+    ✅ markdown_summary: file=tokenguard_summary.md, contains_required_terms=True
+    ✅ input_fixture: marker=True, entries=True
+
+Cleaning up container d29d5967aafe...
+Container removed.
+

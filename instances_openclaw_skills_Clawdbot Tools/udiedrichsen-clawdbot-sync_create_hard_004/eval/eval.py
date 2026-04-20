@@ -1,0 +1,115 @@
+import json
+import os
+from pathlib import Path
+
+WORKSPACE = Path(os.sys.argv[1])
+# The actual workspace content is nested under /workspace/workspace/
+WORKSPACE = WORKSPACE / 'workspace'
+checks = []
+
+
+def add_check(name, passed, detail):
+    checks.append({"name": name, "passed": bool(passed), "detail": str(detail)})
+
+
+def safe_read(path):
+    try:
+        return path.read_text(encoding='utf-8')
+    except Exception as e:
+        return None, f"failed to read {path}: {e}"
+
+try:
+    peers_path = WORKSPACE / 'memory' / 'clawdbot-sync' / 'peers.json'
+    history_path = WORKSPACE / 'memory' / 'clawdbot-sync' / 'history.json'
+    config_path = WORKSPACE / 'memory' / 'clawdbot-sync' / 'config.json'
+    memory_path = WORKSPACE / 'memory' / 'MEMORY.md'
+    user_path = WORKSPACE / 'memory' / 'USER.md'
+    skill_path = WORKSPACE / 'skills' / 'sample-skill' / 'SKILL.md'
+    conflict_path = WORKSPACE / 'memory' / 'clawdbot-sync' / 'conflicts' / 'memory-2026-01-24.conflict.json'
+
+    expected_marker = 'MARKER_SYNC_BUNDLE_7F3A9C'
+
+    # peers.json
+    try:
+        text = peers_path.read_text(encoding='utf-8')
+        data = json.loads(text)
+        ok = isinstance(data, dict) and 'field-mac' in data and 'server' in data
+        ok = ok and any('100.64.12.34' in json.dumps(v) for v in data.values())
+        add_check('peers.json exists and contains configured peers', ok, 'field-mac and server should be present')
+    except Exception as e:
+        add_check('peers.json exists and contains configured peers', False, f'error: {e}')
+
+    # history.json
+    try:
+        text = history_path.read_text(encoding='utf-8')
+        data = json.loads(text)
+        marker_hits = 0
+        if isinstance(data, list):
+            for item in data:
+                try:
+                    blob = json.dumps(item).lower()
+                    if 'dry-run' in blob:
+                        marker_hits += 1
+                    if expected_marker.lower() in blob:
+                        marker_hits += 1
+                except Exception:
+                    pass
+        ok = isinstance(data, list) and len(data) >= 2 and marker_hits >= 2
+        add_check('history.json records dry-run and sync activity', ok, 'need at least two history entries with dry-run and marker')
+    except Exception as e:
+        add_check('history.json records dry-run and sync activity', False, f'error: {e}')
+
+    # config.json
+    try:
+        text = config_path.read_text(encoding='utf-8')
+        data = json.loads(text)
+        blob = json.dumps(data).lower()
+        ok = 'newest-wins' in blob and 'auto_sync' in blob and expected_marker.lower() in blob
+        add_check('config.json stores conflict policy and marker', ok, 'expected newest-wins policy and marker')
+    except Exception as e:
+        add_check('config.json stores conflict policy and marker', False, f'error: {e}')
+
+    # MEMORY.md
+    try:
+        text = memory_path.read_text(encoding='utf-8')
+        norm = ' '.join(text.lower().split())
+        ok = 'sync bundle prepared for peer field-mac' in norm and 'newest-wins' in norm and expected_marker.lower() in norm
+        add_check('MEMORY.md updated for field-mac bundle', ok, 'should mention field-mac, newest-wins, and marker')
+    except Exception as e:
+        add_check('MEMORY.md updated for field-mac bundle', False, f'error: {e}')
+
+    # USER.md
+    try:
+        text = user_path.read_text(encoding='utf-8')
+        norm = ' '.join(text.lower().split())
+        ok = 'preferred peer name: field-mac' in norm and 'dry-run first' in norm and expected_marker.lower() in norm
+        add_check('USER.md updated with peer preference', ok, 'should mention field-mac and dry-run first')
+    except Exception as e:
+        add_check('USER.md updated with peer preference', False, f'error: {e}')
+
+    # SKILL.md
+    try:
+        text = skill_path.read_text(encoding='utf-8')
+        norm = ' '.join(text.lower().split())
+        ok = 'sample-skill' in norm and 'marker:' in norm and expected_marker.lower() in norm
+        add_check('sample skill file present with marker', ok, 'sample skill should exist and contain marker')
+    except Exception as e:
+        add_check('sample skill file present with marker', False, f'error: {e}')
+
+    # conflict file
+    try:
+        text = conflict_path.read_text(encoding='utf-8')
+        data = json.loads(text)
+        blob = json.dumps(data).lower()
+        ok = 'winner' in blob and 'local' in blob and expected_marker.lower() in blob
+        add_check('conflict review file exists', ok, 'conflict file should identify local winner and marker')
+    except Exception as e:
+        add_check('conflict review file exists', False, f'error: {e}')
+
+except Exception as e:
+    add_check('workspace inspection', False, f'fatal error: {e}')
+
+passed_count = sum(1 for c in checks if c['passed'])
+score = passed_count / len(checks) if checks else 0.0
+result = {"passed": passed_count == len(checks) and len(checks) > 0, "score": score, "checks": checks}
+print(json.dumps(result, indent=2))

@@ -1,0 +1,92 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+
+def norm(s):
+    try:
+        return re.sub(r'[^a-z0-9]+', ' ', str(s).lower()).strip()
+    except Exception:
+        return ''
+
+
+def read_text(path):
+    try:
+        return Path(path).read_text(encoding='utf-8', errors='replace')
+    except Exception as e:
+        return None, f'failed to read {path}: {e}'
+
+
+def main():
+    checks = []
+    workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+    out_path = workspace / '.clawface' / 'avatar_state.json'
+
+    # Check 1: file exists
+    try:
+        exists = out_path.exists()
+        checks.append({
+            'name': 'output file exists',
+            'passed': exists,
+            'detail': 'found' if exists else f'missing: {out_path}'
+        })
+    except Exception as e:
+        checks.append({'name': 'output file exists', 'passed': False, 'detail': f'error checking existence: {e}'})
+
+    data = None
+    if out_path.exists():
+        try:
+            data = json.loads(out_path.read_text(encoding='utf-8'))
+            checks.append({'name': 'valid json', 'passed': True, 'detail': 'parsed successfully'})
+        except Exception as e:
+            checks.append({'name': 'valid json', 'passed': False, 'detail': f'could not parse JSON: {e}'})
+    else:
+        checks.append({'name': 'valid json', 'passed': False, 'detail': 'file missing'})
+
+    # Load markers
+    project_name = None
+    marker_ok = False
+    try:
+        ptxt = (workspace / 'inputs' / 'project_name.txt').read_text(encoding='utf-8', errors='replace')
+        project_name = ptxt.strip()
+        checks.append({'name': 'project marker present', 'passed': bool(norm(project_name)), 'detail': f'project_name={project_name!r}'})
+    except Exception as e:
+        checks.append({'name': 'project marker present', 'passed': False, 'detail': f'failed to read project marker: {e}'})
+    try:
+        notes = json.loads((workspace / 'inputs' / 'notes.json').read_text(encoding='utf-8', errors='replace'))
+        marker_ok = str(notes.get('marker', '')).lower() == 'clawface_ok'
+        checks.append({'name': 'input marker present', 'passed': marker_ok, 'detail': f"marker={notes.get('marker')!r}"})
+    except Exception as e:
+        checks.append({'name': 'input marker present', 'passed': False, 'detail': f'failed to read notes.json: {e}'})
+
+    # Content checks on output
+    if isinstance(data, dict):
+        emotion = norm(data.get('emotion'))
+        action = norm(data.get('action'))
+        effect = norm(data.get('effect'))
+        message = str(data.get('message', ''))
+
+        checks.append({'name': 'emotion is successful', 'passed': emotion in {'happy', 'excited', 'proud'}, 'detail': f'emotion={data.get("emotion")!r}'})
+        checks.append({'name': 'action indicates completion', 'passed': action in {'success', 'idle'}, 'detail': f'action={data.get("action")!r}'})
+        checks.append({'name': 'effect is celebratory or calm', 'passed': effect in {'confetti', 'sparkles', 'pulse', 'none'}, 'detail': f'effect={data.get("effect")!r}'})
+        if project_name:
+            checks.append({'name': 'message mentions project', 'passed': norm(project_name) in norm(message), 'detail': f'message={message!r}'})
+        else:
+            checks.append({'name': 'message mentions project', 'passed': False, 'detail': 'project name unavailable'})
+        checks.append({'name': 'message is non-empty', 'passed': len(message.strip()) > 0, 'detail': f'len={len(message.strip())}'})
+    else:
+        for name in ['emotion is successful', 'action indicates completion', 'effect is celebratory or calm', 'message mentions project', 'message is non-empty']:
+            checks.append({'name': name, 'passed': False, 'detail': 'no parsed output data'})
+
+    total = len(checks)
+    passed_count = sum(1 for c in checks if c.get('passed'))
+    score = passed_count / total if total else 0.0
+    passed = passed_count == total
+
+    print(json.dumps({'passed': passed, 'score': score, 'checks': checks}, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    main()

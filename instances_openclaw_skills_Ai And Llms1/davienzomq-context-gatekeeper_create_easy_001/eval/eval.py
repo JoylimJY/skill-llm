@@ -1,0 +1,44 @@
+import json
+import re
+import sys
+from pathlib import Path
+
+workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(".")
+checks = []
+
+def add_check(name, passed, detail):
+    checks.append({"name": name, "passed": bool(passed), "detail": detail})
+
+try:
+    summary_path = workspace / 'context' / 'current-summary.md'
+    if not summary_path.exists():
+        add_check('summary file exists', False, 'Missing context/current-summary.md')
+    else:
+        text = summary_path.read_text(encoding='utf-8', errors='replace')
+        norm = re.sub(r'\s+', ' ', text.lower())
+        required = ['resumo compacto', 'pendências e próximos passos', 'últimos turnos']
+        missing = [s for s in required if s not in norm]
+        add_check('required sections present', not missing, 'Missing sections: ' + (', '.join(missing) if missing else 'none'))
+        add_check('mentions automation request', 'antes de cada resposta' in norm or 'automática' in norm, 'Found automation-related text' if ('antes de cada resposta' in norm or 'automática' in norm) else 'Missing automation-related text')
+        add_check('contains recent user asks', 'qual nome dos 12 discípulos de jesus' in norm and 'você sabe todas nossas regras' in norm, 'Recent asks present' if ('qual nome dos 12 discípulos de jesus' in norm and 'você sabe todas nossas regras' in norm) else 'Recent asks missing')
+except Exception as e:
+    add_check('summary validation', False, f'Error validating summary: {e}')
+
+try:
+    history_path = workspace / 'context' / 'history.txt'
+    if not history_path.exists():
+        add_check('history file exists', False, 'Missing context/history.txt')
+    else:
+        text = history_path.read_text(encoding='utf-8', errors='replace')
+        norm = re.sub(r'\s+', ' ', text.lower())
+        add_check('history contains marker content', 'itaú' in norm or 'itau' in norm, 'History includes Itaú reference' if ('itaú' in norm or 'itau' in norm) else 'Itaú reference not found')
+except Exception as e:
+    add_check('history validation', False, f'Error validating history: {e}')
+
+try:
+    passed_count = sum(1 for c in checks if c['passed'])
+    score = passed_count / len(checks) if checks else 0.0
+    result = {'passed': passed_count == len(checks) and len(checks) > 0, 'score': score, 'checks': checks}
+    print(json.dumps(result, ensure_ascii=False))
+except Exception:
+    print(json.dumps({'passed': False, 'score': 0.0, 'checks': checks}, ensure_ascii=False))

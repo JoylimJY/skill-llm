@@ -1,0 +1,112 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+
+def normalize(text):
+    try:
+        text = text or ''
+        text = text.lower()
+        text = re.sub(r'[^a-z0-9]+', ' ', text)
+        return re.sub(r'\s+', ' ', text).strip()
+    except Exception:
+        return ''
+
+
+def safe_read(path):
+    try:
+        return Path(path).read_text(encoding='utf-8')
+    except Exception as e:
+        return None, str(e)
+
+
+def main():
+    checks = []
+    workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+
+    expected_files = ['release_note.txt', 'verification_summary.json', 'README.md']
+
+    # Check 1: files exist
+    missing = []
+    try:
+        for name in expected_files:
+            if not (workspace / name).is_file():
+                missing.append(name)
+        passed = len(missing) == 0
+        detail = 'All required files present.' if passed else f'Missing: {", ".join(missing)}'
+    except Exception as e:
+        passed = False
+        detail = f'Error checking file existence: {e}'
+    checks.append({'name': 'required_files_exist', 'passed': passed, 'detail': detail})
+
+    # Check 2: release_note.txt content
+    try:
+        text, err = safe_read(workspace / 'release_note.txt')
+        if text is None:
+            passed = False
+            detail = f'Could not read release_note.txt: {err}'
+        else:
+            n = normalize(text)
+            markers = ['model think context', 'dry run', 'backup', 'rollback', 'restart']
+            found = [m for m in markers if normalize(m) in n]
+            passed = len(found) >= 4
+            detail = f'Found markers: {found}' if passed else f'Only found markers: {found}'
+    except Exception as e:
+        passed = False
+        detail = f'Error validating release_note.txt: {e}'
+    checks.append({'name': 'release_note_mentions_key_flow', 'passed': passed, 'detail': detail})
+
+    # Check 3: verification_summary.json structure/content
+    try:
+        raw, err = safe_read(workspace / 'verification_summary.json')
+        if raw is None:
+            passed = False
+            detail = f'Could not read verification_summary.json: {err}'
+        else:
+            try:
+                data = json.loads(raw)
+                marker = normalize(str(data.get('marker_phrase', '')))
+                steps = normalize(' '.join(map(str, data.get('steps', []))))
+                passed = ('model think context' in marker) and all(k in steps for k in ['dry', 'backup', 'rollback', 'restart'])
+                detail = 'JSON contains marker_phrase and steps.' if passed else f'Invalid JSON content keys/values: {data}'
+            except Exception as e:
+                passed = False
+                detail = f'Invalid JSON: {e}'
+    except Exception as e:
+        passed = False
+        detail = f'Error validating verification_summary.json: {e}'
+    checks.append({'name': 'verification_summary_json_valid', 'passed': passed, 'detail': detail})
+
+    # Check 4: README quality hint
+    try:
+        text, err = safe_read(workspace / 'README.md')
+        if text is None:
+            passed = False
+            detail = f'Could not read README.md: {err}'
+        else:
+            n = normalize(text)
+            passed = ('telegram' in n) and ('footer' in n) and ('patch' in n)
+            detail = 'README covers telegram footer patch.' if passed else 'README missing one or more expected concepts.'
+    except Exception as e:
+        passed = False
+        detail = f'Error validating README.md: {e}'
+    checks.append({'name': 'readme_mentions_feature', 'passed': passed, 'detail': detail})
+
+    score = 0.0
+    try:
+        score = sum(1 for c in checks if c['passed']) / len(checks) if checks else 0.0
+    except Exception:
+        score = 0.0
+
+    result = {
+        'passed': score == 1.0,
+        'score': score,
+        'checks': checks,
+    }
+    print(json.dumps(result, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    main()

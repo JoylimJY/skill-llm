@@ -1,0 +1,213 @@
+import sys
+import os
+import json
+import re
+import importlib.util
+import time
+
+def load_module(workspace):
+    path = os.path.join(workspace, 'scripts', 'token_guard.py')
+    if not os.path.exists(path):
+        return None, f'scripts/token_guard.py not found at {path}'
+    try:
+        spec = importlib.util.spec_from_file_location('token_guard', path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod, None
+    except Exception as e:
+        return None, f'Import error: {e}'
+
+def run_checks(workspace):
+    checks = []
+
+    # Check 1: file exists
+    tg_path = os.path.join(workspace, 'scripts', 'token_guard.py')
+    file_exists = os.path.exists(tg_path)
+    checks.append({'name': 'file_exists', 'passed': file_exists,
+                   'detail': 'scripts/token_guard.py exists' if file_exists else 'File not found'})
+    if not file_exists:
+        for _ in range(6):
+            checks.append({'name': 'skipped', 'passed': False, 'detail': 'Skipped due to missing file'})
+        return checks
+
+    mod, err = load_module(workspace)
+    module_loads = mod is not None
+    checks.append({'name': 'module_loads', 'passed': module_loads,
+                   'detail': 'Module imported successfully' if module_loads else err})
+    if not module_loads:
+        for _ in range(5):
+            checks.append({'name': 'skipped', 'passed': False, 'detail': 'Skipped due to import failure'})
+        return checks
+
+    # Check 3: TokenGuard class exists
+    try:
+        cls = getattr(mod, 'TokenGuard', None)
+        has_class = cls is not None
+        checks.append({'name': 'has_tokenguard_class', 'passed': has_class,
+                       'detail': 'TokenGuard class found' if has_class else 'TokenGuard class not found'})
+    except Exception as e:
+        checks.append({'name': 'has_tokenguard_class', 'passed': False, 'detail': str(e)})
+        cls = None
+
+    if not cls:
+        for _ in range(4):
+            checks.append({'name': 'skipped', 'passed': False, 'detail': 'Skipped: no TokenGuard class'})
+        return checks
+
+    # Check 4: instantiation and check() returns valid decision
+    try:
+        guard = cls()
+        decision = guard.check('Hello world test prompt', model='gemini-3-flash')
+        action = None
+        if hasattr(decision, 'action'):
+            action = decision.action
+        elif isinstance(decision, dict):
+            action = decision.get('action')
+        valid_actions = {'proceed', 'wait', 'fallback', 'block'}
+        action_valid = isinstance(action, str) and action.lower() in valid_actions
+        checks.append({'name': 'check_returns_valid_action', 'passed': action_valid,
+                       'detail': f'action={action}' if action_valid else f'Invalid or missing action: {action}'})
+    except Exception as e:
+        checks.append({'name': 'check_returns_valid_action', 'passed': False, 'detail': str(e)})
+
+    # Check 5: CJK-aware token estimation (CJK chars should count more than ASCII)
+    try:
+        guard2 = cls()
+        ascii_prompt = 'a' * 100
+        cjk_prompt = '你' * 100
+        d_ascii = guard2.check(ascii_prompt, model='gemini-3-flash')
+        d_cjk = guard2.check(cjk_prompt, model='gemini-3-flash')
+        def get_tokens(d):
+            if hasattr(d, 'estimated_tokens'):
+                return d.estimated_tokens
+            elif isinstance(d, dict):
+                return d.get('estimated_tokens', 0)
+            return 0
+        t_ascii = get_tokens(d_ascii)
+        t_cjk = get_tokens(d_cjk)
+        cjk_aware = isinstance(t_cjk, (int, float)) and isinstance(t_ascii, (int, float)) and t_cjk > t_ascii
+        checks.append({'name': 'cjk_aware_estimation', 'passed': cjk_aware,
+                       'detail': f'ascii_tokens={t_ascii}, cjk_tokens={t_cjk}'})
+    except Exception as e:
+        checks.append({'name': 'cjk_aware_estimation', 'passed': False, 'detail': str(e)})
+
+    # Check 6: duplicate detection blocks after 3+ identical requests
+    try:
+        guard3 = cls()
+        marker = 'UNIQUE_DUPLICATE_TEST_MARKER_42XZ ' * 5
+        results = []
+        for _ in range(4):
+            d = guard3.check(marker, model='gemini-3-flash')
+            a = d.action if hasattr(d, 'action') else (d.get('action') if isinstance(d, dict) else None)
+            results.append(str(a).lower() if a else '')
+            if a and str(a).lower() in ('proceed',):
+                try:
+                    guard3.record_usage(100, model='gemini-3-flash')
+                except Exception:
+                    pass
+        blocked = any(r == 'block' for r in results)
+        checks.append({'name': 'duplicate_detection_blocks', 'passed': blocked,
+                       'detail': f'actions over 4 identical calls: {results}'})
+    except Exception as e:
+        checks.append({'name': 'duplicate_detection_blocks', 'passed': False, 'detail': str(e)})
+
+    # Check 7: record_usage and status() output structure
+    try:
+        guard4 = cls()
+        guard4.record_usage(500000, model='gemini-3-flash')
+        status = guard4.status()
+        if not isinstance(status, dict):
+            try:
+                status = json.loads(status)
+            except Exception:
+                status = {}
+        
+        # Check for models key (flexible matching)
+        has_models = any(key.lower() in ['models', 'model', 'model_stats', 'model_info'] for key in status.keys())
+        
+        # Check for stats info - accept various naming conventions
+        stats_keys = ['stats', 'statistics', 'stat', 'info', 'summary', 'cache_size', 'total_requests', 
+                     'total_usage', 'requests_count', 'cache_hits', 'total_tokens', 'usage_stats']
+        has_stats = any(key.lower() in [k.lower() for k in stats_keys] for key in status.keys())
+        
+        # Check for usage fields in model data (flexible matching)
+        model_data = {}
+        for key in status.keys():
+            if 'model' in key.lower():
+                model_data = status.get(key, {})
+                break
+        
+        has_usage_fields = False
+        if model_data and isinstance(model_data, dict):
+            # Flexible matching for usage-related fields
+            usage_field_patterns = [
+                'used', 'usage', 'remaining', 'limit', 'tpm', 'quota', 'percent', 'pct', 
+                'this_minute', 'minute', 'current', 'count', 'total'
+            ]
+            for key in model_data.keys():
+                key_lower = key.lower()
+                if any(pattern in key_lower for pattern in usage_field_patterns):
+                    has_usage_fields = True
+                    break
+        
+        # Also check if status has any numeric values that could be usage stats
+        if not has_usage_fields:
+            def has_numeric_value(obj):
+                if isinstance(obj, (int, float)):
+                    return True
+                if isinstance(obj, dict):
+                    return any(has_numeric_value(v) for v in obj.values())
+                if isinstance(obj, list):
+                    return any(has_numeric_value(v) for v in obj)
+                return False
+            if has_models and has_numeric_value(model_data):
+                has_usage_fields = True
+        
+        status_valid = has_models and has_stats and has_usage_fields
+        checks.append({'name': 'status_output_structure', 'passed': status_valid,
+                       'detail': f'has_models={has_models}, has_stats={has_stats}, has_usage_fields={has_usage_fields}'})
+    except Exception as e:
+        checks.append({'name': 'status_output_structure', 'passed': False, 'detail': str(e)})
+
+    # Check 8: record_429 and cache_response exist and are callable
+    try:
+        guard5 = cls()
+        has_record_429 = callable(getattr(guard5, 'record_429', None))
+        has_cache = callable(getattr(guard5, 'cache_response', None))
+        if has_record_429:
+            guard5.record_429('gemini-3-flash', retry_delay=30.0)
+        if has_cache:
+            guard5.cache_response('test prompt', 'test response')
+        methods_ok = has_record_429 and has_cache
+        checks.append({'name': 'record_429_and_cache_response_callable', 'passed': methods_ok,
+                       'detail': f'record_429={has_record_429}, cache_response={has_cache}'})
+    except Exception as e:
+        checks.append({'name': 'record_429_and_cache_response_callable', 'passed': False, 'detail': str(e)})
+
+    return checks
+
+def main():
+    if len(sys.argv) < 2:
+        workspace = '.'
+    else:
+        workspace = sys.argv[1]
+
+    try:
+        checks = run_checks(workspace)
+    except Exception as e:
+        checks = [{'name': 'unexpected_error', 'passed': False, 'detail': str(e)}]
+
+    total = len(checks)
+    passed_count = sum(1 for c in checks if c.get('passed', False))
+    score = round(passed_count / total, 4) if total > 0 else 0.0
+    all_passed = passed_count == total
+
+    result = {
+        'passed': all_passed,
+        'score': score,
+        'checks': checks
+    }
+    print(json.dumps(result, indent=2))
+
+if __name__ == '__main__':
+    main()

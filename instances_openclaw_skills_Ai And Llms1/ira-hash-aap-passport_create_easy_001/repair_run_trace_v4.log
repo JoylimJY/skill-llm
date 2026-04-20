@@ -1,0 +1,1205 @@
+Building Docker image...
+Creating new container...
+Container ready: d62618659e1f
+Workspace files: README_NOTE.txt
+gen_inputs.py
+input_marker.txt
+setup.sh
+
+============================================================
+Starting agent interaction (Repair Mode)...
+============================================================
+
+============================================================
+TASK: Create a small Node.js demo that starts an AAP WebSocket server on port 3000 with the path `/aap`, `requireSignature` enabled, and logs verified public IDs to the console. Also prepare a matching client example that connects to the server URL `ws://localhost:3000/aap` and runs verification with a solver. Save the server example as `server.js` and the client example as `client.js` in the current directory.
+============================================================
+
+
+--- Turn 1/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+ls -la /workspace
+```
+
+[EXECUTING bash]:
+ls -la /workspace
+
+[OUTPUT]:
+total 16
+drwxr-xr-x 2 root  root  110 Apr 13 08:01 .
+drwxr-xr-x 1 root  root   31 Apr 13 08:01 ..
+-rw-r--r-- 1 root  root   69 Apr 13 08:01 README_NOTE.txt
+-rw-r--r-- 1 32113 42021 285 Apr 12 11:22 gen_inputs.py
+-rw-r--r-- 1 root  root   27 Apr 13 08:01 input_marker.txt
+-rwxr-xr-x 1 32113 42021  74 Apr 12 11:22 setup.sh
+
+
+--- Turn 2/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/README_NOTE.txt
+```
+
+[EXECUTING bash]:
+cat /workspace/README_NOTE.txt
+
+[OUTPUT]:
+Generate server.js and client.js based on the AAP demo requirements.
+
+
+--- Turn 3/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+node --version && npm --version
+```
+
+[EXECUTING bash]:
+node --version && npm --version
+
+[OUTPUT]:
+v20.20.2
+10.8.2
+
+
+--- Turn 4/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+npm search aap 2>/dev/null | head -20
+```
+
+[EXECUTING bash]:
+npm search aap 2>/dev/null | head -20
+
+[OUTPUT]:
+aap
+async-await package
+Version 0.0.1 published 2014-08-12 by piscisaureus
+Maintainers: piscisaureus
+https://npm.im/aap
+
+@agentapplicationprotocol/client
+AAP client
+Version 0.7.1 published 2026-04-07 by discretetom
+Maintainers: discretetom
+Keywords: aap agent agent-application-protocol ai client
+https://npm.im/@agentapplicationprotocol/client
+
+@agentapplicationprotocol/server
+AAP server
+Version 0.7.1 published 2026-04-07 by discretetom
+Maintainers: discretetom
+Keywords: aap agent agent-application-protocol ai server
+https://npm.im/@agentapplicationprotocol/server
+
+
+
+--- Turn 5/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cd /workspace && npm init -y
+```
+
+[EXECUTING bash]:
+cd /workspace && npm init -y
+
+[OUTPUT]:
+Wrote to /workspace/package.json:
+
+{
+  "name": "workspace",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": ""
+}
+
+
+
+
+
+--- Turn 6/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cd /workspace && npm install @agentapplicationprotocol/server @agentapplicationprotocol/client
+```
+
+[EXECUTING bash]:
+cd /workspace && npm install @agentapplicationprotocol/server @agentapplicationprotocol/client
+
+[OUTPUT]:
+
+added 14 packages, and audited 15 packages in 4s
+
+1 package is looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+
+
+--- Turn 7/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+ls -la /workspace/node_modules/@agentapplicationprotocol/
+```
+
+[EXECUTING bash]:
+ls -la /workspace/node_modules/@agentapplicationprotocol/
+
+[OUTPUT]:
+total 0
+drwxr-xr-x  5 root root  62 Apr 13 08:02 .
+drwxr-xr-x 12 root root 267 Apr 13 08:02 ..
+drwxr-xr-x  4 root root 105 Apr 13 08:02 client
+drwxr-xr-x  4 root root 105 Apr 13 08:02 core
+drwxr-xr-x  4 root root 105 Apr 13 08:02 server
+
+
+--- Turn 8/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/node_modules/@agentapplicationprotocol/server/package.json
+```
+
+[EXECUTING bash]:
+cat /workspace/node_modules/@agentapplicationprotocol/server/package.json
+
+[OUTPUT]:
+{
+  "name": "@agentapplicationprotocol/server",
+  "version": "0.7.1",
+  "description": "AAP server",
+  "keywords": [
+    "aap",
+    "agent",
+    "agent-application-protocol",
+    "ai",
+    "server"
+  ],
+  "homepage": "https://github.com/agentapplicationprotocol/typescript-sdk#readme",
+  "bugs": {
+    "url": "https://github.com/agentapplicationprotocol/typescript-sdk/issues"
+  },
+  "license": "Apache-2.0",
+  "author": "Agent Application Protocol",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agentapplicationprotocol/typescript-sdk.git",
+    "directory": "packages/server"
+  },
+  "files": [
+    "src",
+    "!src/examples",
+    "!src/**/*.test.*",
+    "dist/src",
+    "!dist/src/examples",
+    "!dist/src/**/*.test.*"
+  ],
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "dependencies": {
+    "ai": "^6.0.141",
+    "hono": "^4.12.8",
+    "zod": "^4.3.6",
+    "@agentapplicationprotocol/core": "0.7.1"
+  },
+  "devDependencies": {
+    "@ai-sdk/openai": "^3.0.48",
+    "@hono/node-server": "^1.19.12",
+    "tsx": "^4.21.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "dev": "tsc --watch",
+    "example:basic": "tsx src/examples/basic/index.ts",
+    "example:compact-history": "tsx src/examples/compact-history/index.ts"
+  }
+}
+
+--- Turn 9/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+ls -la /workspace/node_modules/@agentapplicationprotocol/server/dist/src/
+```
+
+[EXECUTING bash]:
+ls -la /workspace/node_modules/@agentapplicationprotocol/server/dist/src/
+
+[OUTPUT]:
+total 152
+drwxr-xr-x 2 root root  4096 Apr 13 08:02 .
+drwxr-xr-x 3 root root    25 Apr 13 08:02 ..
+-rw-r--r-- 1 root root  1480 Apr 13 08:02 agent.d.ts
+-rw-r--r-- 1 root root  1068 Apr 13 08:02 agent.d.ts.map
+-rw-r--r-- 1 root root  2735 Apr 13 08:02 agent.js
+-rw-r--r-- 1 root root    51 Apr 13 08:02 agent.test.d.ts
+-rw-r--r-- 1 root root   117 Apr 13 08:02 agent.test.d.ts.map
+-rw-r--r-- 1 root root  3685 Apr 13 08:02 agent.test.js
+-rw-r--r-- 1 root root   283 Apr 13 08:02 index.d.ts
+-rw-r--r-- 1 root root   361 Apr 13 08:02 index.d.ts.map
+-rw-r--r-- 1 root root   899 Apr 13 08:02 index.js
+-rw-r--r-- 1 root root  1231 Apr 13 08:02 model.d.ts
+-rw-r--r-- 1 root root   700 Apr 13 08:02 model.d.ts.map
+-rw-r--r-- 1 root root  7893 Apr 13 08:02 model.js
+-rw-r--r-- 1 root root    51 Apr 13 08:02 model.test.d.ts
+-rw-r--r-- 1 root root   117 Apr 13 08:02 model.test.d.ts.map
+-rw-r--r-- 1 root root  6576 Apr 13 08:02 model.test.js
+-rw-r--r-- 1 root root  1289 Apr 13 08:02 server.d.ts
+-rw-r--r-- 1 root root   925 Apr 13 08:02 server.d.ts.map
+-rw-r--r-- 1 root root  3251 Apr 13 08:02 server.js
+-rw-r--r-- 1 root root    52 Apr 13 08:02 server.test.d.ts
+-rw-r--r-- 1 root root   119 Apr 13 08:02 server.test.d.ts.map
+-rw-r--r-- 1 root root 10999 Apr 13 08:02 server.test.js
+-rw-r--r-- 1 root root  3775 Apr 13 08:02 session.d.ts
+-rw-r--r-- 1 root root  1320 Apr 13 08:02 session.d.ts.map
+-rw-r--r-- 1 root root 11890 Apr 13 08:02 session.js
+-rw-r--r-- 1 root root    53 Apr 13 08:02 session.test.d.ts
+-rw-r--r-- 1 root root   121 Apr 13 08:02 session.test.d.ts.map
+-rw-r--r-- 1 root root 18079 Apr 13 08:02 session.test.js
+
+
+--- Turn 10/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/node_modules/@agentapplicationprotocol/server/dist/src/server.js
+```
+
+[EXECUTING bash]:
+cat /workspace/node_modules/@agentapplicationprotocol/server/dist/src/server.js
+
+[OUTPUT]:
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.aap = aap;
+const hono_1 = require("hono");
+const streaming_1 = require("hono/streaming");
+// --- SSE helper ---
+async function writeSSEEvents(stream, events) {
+    for await (const { event, ...data } of events) {
+        await stream.writeSSE({ event, data: JSON.stringify(data) });
+    }
+}
+function redactSecretOptions(session, agents) {
+    const { options } = session.agent;
+    if (!options)
+        return session;
+    const agentInfo = agents.find((a) => a.name === session.agent.name);
+    const secretNames = new Set(agentInfo?.options?.filter((o) => o.type === "secret").map((o) => o.name) ?? []);
+    if (secretNames.size === 0)
+        return session;
+    return {
+        ...session,
+        agent: {
+            ...session.agent,
+            options: Object.fromEntries(Object.entries(options).map(([k, v]) => [k, secretNames.has(k) ? "***" : v])),
+        },
+    };
+}
+// --- aap ---
+/**
+ * Returns a Hono app with all AAP endpoints mounted.
+ * Use with `app.route()` to compose it into your app, optionally under a base path.
+ * Apply auth, CORS, and other middleware to your outer app before routing.
+ *
+ * @example
+ * const app = new Hono()
+ * app.use(bearerAuth({ token: 'secret' }))
+ * app.route('/', aap(handler))
+ *
+ * // with base path:
+ * app.route('/api/v1', aap(handler))
+ */
+function aap(handler) {
+    const router = new hono_1.Hono();
+    router.get("/meta", (c) => c.json({ version: 3, ...handler.getMeta() }));
+    router.post("/sessions", async (c) => {
+        const req = await c.req.json();
+        const result = await handler.createSession(req);
+        return c.json(result, 201);
+    });
+    router.post("/sessions/:id/turns", async (c) => {
+        const req = await c.req.json();
+        const result = await handler.sendTurn(c.req.param("id"), req);
+        if (req.stream === "delta" || req.stream === "message") {
+            return (0, streaming_1.streamSSE)(c, (stream) =...
+
+--- Turn 11/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/node_modules/@agentapplicationprotocol/server/dist/src/session.js
+```
+
+[EXECUTING bash]:
+cat /workspace/node_modules/@agentapplicationprotocol/server/dist/src/session.js
+
+[OUTPUT]:
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Session = void 0;
+const core_1 = require("@agentapplicationprotocol/core");
+/** Manages a stateful conversation session, accumulating history across turns. */
+class Session {
+    constructor(sessionId, agent, model, agentConfig, clientTools, history) {
+        this.sessionId = sessionId;
+        this.agent = agent;
+        this.model = model;
+        this.agentConfig = agentConfig;
+        this.clientTools = clientTools;
+        this.history = history;
+    }
+    /** Resolves tool_permission messages into tool result messages by executing granted tools. */
+    async resolvePermissions(messages) {
+        const resolved = [];
+        for (const m of messages) {
+            // pass through regular history messages unchanged
+            if (m.role !== "tool_permission") {
+                resolved.push(m);
+                continue;
+            }
+            // for tool_permission, look up the original tool_use block in history to get name + args
+            let toolName = "";
+            let toolInput = "";
+            for (const h of this.history) {
+                if (h.role === "assistant" && Array.isArray(h.content)) {
+                    for (const b of h.content) {
+                        if (b.type === "tool_use" && b.toolCallId === m.toolCallId) {
+                            toolName = b.name;
+                            toolInput = JSON.stringify(b.input);
+                        }
+                    }
+                }
+            }
+            // execute the tool if granted, otherwise produce a denial message
+            const content = m.granted && this.agent.tools.has(toolName)
+                ? await this.agent.tools.get(toolName)(toolInput)
+                : `Tool use denied${m.reason ? `: ${m.reason}` : ""}`;
+            resolved.push({ role: "tool", toolCallId: m.toolCallId, content });
+        }
+        return resolved;
+    }
+    /** Returns the set of trusted server t...
+
+--- Turn 12/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/node_modules/@agentapplicationprotocol/core/package.json
+```
+
+[EXECUTING bash]:
+cat /workspace/node_modules/@agentapplicationprotocol/core/package.json
+
+[OUTPUT]:
+{
+  "name": "@agentapplicationprotocol/core",
+  "version": "0.7.1",
+  "description": "Core types and utilities for the Agent Application Protocol",
+  "keywords": [
+    "aap",
+    "agent",
+    "agent-application-protocol",
+    "ai"
+  ],
+  "homepage": "https://github.com/agentapplicationprotocol/typescript-sdk#readme",
+  "bugs": {
+    "url": "https://github.com/agentapplicationprotocol/typescript-sdk/issues"
+  },
+  "license": "Apache-2.0",
+  "author": "Agent Application Protocol",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agentapplicationprotocol/typescript-sdk.git",
+    "directory": "packages/core"
+  },
+  "files": [
+    "src",
+    "!src/examples",
+    "!src/**/*.test.*",
+    "dist/src",
+    "!dist/src/**/*.test.*"
+  ],
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "dependencies": {},
+  "devDependencies": {
+    "@types/json-schema": "^7.0.15"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "dev": "tsc --watch"
+  }
+}
+
+--- Turn 13/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/node_modules/@agentapplicationprotocol/core/dist/src/index.js
+```
+
+[EXECUTING bash]:
+cat /workspace/node_modules/@agentapplicationprotocol/core/dist/src/index.js
+
+[OUTPUT]:
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.sseEventsToMessagesAsync = exports.sseEventsToMessages = void 0;
+var utils_1 = require("./utils");
+Object.defineProperty(exports, "sseEventsToMessages", { enumerable: true, get: function () { return utils_1.sseEventsToMessages; } });
+Object.defineProperty(exports, "sseEventsToMessagesAsync", { enumerable: true, get: function () { return utils_1.sseEventsToMessagesAsync; } });
+
+
+--- Turn 14/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/node_modules/@agentapplicationprotocol/server/dist/src/server.test.js | head -200
+```
+
+[EXECUTING bash]:
+cat /workspace/node_modules/@agentapplicationprotocol/server/dist/src/server.test.js | head -200
+
+[OUTPUT]:
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const vitest_1 = require("vitest");
+const hono_1 = require("hono");
+const bearer_auth_1 = require("hono/bearer-auth");
+const cors_1 = require("hono/cors");
+const server_1 = require("./server");
+const meta = { version: 3, agents: [] };
+const session = { sessionId: "s1", agent: { name: "a" } };
+const agentResponse = { stopReason: "end_turn", messages: [] };
+const createSessionResponse = { sessionId: "s1" };
+const sessionList = { sessions: [session] };
+async function* sseEvents() {
+    yield { event: "turn_start" };
+    yield { event: "text", text: "hi" };
+    yield { event: "turn_stop", stopReason: "end_turn" };
+}
+function makeHandler(overrides = {}) {
+    return {
+        getMeta: vitest_1.vi.fn().mockReturnValue({ agents: [] }),
+        listSessions: vitest_1.vi.fn().mockResolvedValue(sessionList),
+        getSession: vitest_1.vi.fn().mockResolvedValue(session),
+        getSessionHistory: vitest_1.vi.fn().mockResolvedValue([]),
+        createSession: vitest_1.vi.fn().mockResolvedValue(createSessionResponse),
+        sendTurn: vitest_1.vi.fn().mockResolvedValue(agentResponse),
+        deleteSession: vitest_1.vi.fn().mockResolvedValue(undefined),
+        ...overrides,
+    };
+}
+function makeApp(handler, setup) {
+    const app = new hono_1.Hono();
+    setup?.(app);
+    app.route("/", (0, server_1.aap)(handler));
+    return app;
+}
+function req(method, path, body, headers) {
+    return new Request(`http://localhost${path}`, {
+        method,
+        headers: { "Content-Type": "application/json", ...headers },
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+}
+(0, vitest_1.describe)("aap middleware", () => {
+    (0, vitest_1.it)("GET /meta returns meta", async () => {
+        const app = makeApp(makeHandler());
+        const res = await app.fetch(req("GET", "/meta"));
+        (0, vitest_1.expect)(res.status).toBe(200);
+        (0, vitest_1.expect)(await res.json()).toEq...
+
+--- Turn 15/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/node_modules/@agentapplicationprotocol/client/package.json
+```
+
+[EXECUTING bash]:
+cat /workspace/node_modules/@agentapplicationprotocol/client/package.json
+
+[OUTPUT]:
+{
+  "name": "@agentapplicationprotocol/client",
+  "version": "0.7.1",
+  "description": "AAP client",
+  "keywords": [
+    "aap",
+    "agent",
+    "agent-application-protocol",
+    "ai",
+    "client"
+  ],
+  "homepage": "https://github.com/agentapplicationprotocol/typescript-sdk#readme",
+  "bugs": {
+    "url": "https://github.com/agentapplicationprotocol/typescript-sdk/issues"
+  },
+  "license": "Apache-2.0",
+  "author": "Agent Application Protocol",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agentapplicationprotocol/typescript-sdk.git",
+    "directory": "packages/client"
+  },
+  "files": [
+    "src",
+    "!src/examples",
+    "!src/**/*.test.*",
+    "dist/src",
+    "!dist/src/examples",
+    "!dist/src/**/*.test.*"
+  ],
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "dependencies": {
+    "eventsource-parser": "^3.0.6",
+    "@agentapplicationprotocol/core": "0.7.1"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "dev": "tsc --watch",
+    "example:basic": "tsx src/examples/basic/index.ts",
+    "example:cli": "tsx src/examples/cli/index.ts"
+  }
+}
+
+--- Turn 16/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/node_modules/@agentapplicationprotocol/client/dist/src/index.js
+```
+
+[EXECUTING bash]:
+cat /workspace/node_modules/@agentapplicationprotocol/client/dist/src/index.js
+
+[OUTPUT]:
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Session = exports.ClientError = exports.Client = void 0;
+var client_1 = require("./client");
+Object.defineProperty(exports, "Client", { enumerable: true, get: function () { return client_1.Client; } });
+Object.defineProperty(exports, "ClientError", { enumerable: true, get: function () { return client_1.ClientError; } });
+var session_1 = require("./session");
+Object.defineProperty(exports, "Session", { enumerable: true, get: function () { return session_1.Session; } });
+
+
+--- Turn 17/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/node_modules/@agentapplicationprotocol/client/dist/src/client.js
+```
+
+[EXECUTING bash]:
+cat /workspace/node_modules/@agentapplicationprotocol/client/dist/src/client.js
+
+[OUTPUT]:
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Client = exports.ClientError = void 0;
+const eventsource_parser_1 = require("eventsource-parser");
+class ClientError extends Error {
+    constructor(method, path, status, message) {
+        super(`AAP ${method} ${path} → ${status}: ${message}`);
+        this.method = method;
+        this.path = path;
+        this.status = status;
+        this.name = "ClientError";
+    }
+}
+exports.ClientError = ClientError;
+class Client {
+    constructor({ baseUrl, apiKey }) {
+        this.baseUrl = baseUrl.replace(/\/$/, "");
+        this.headers = {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+        };
+    }
+    url(path) {
+        return `${this.baseUrl}${path}`;
+    }
+    async request(method, path, body) {
+        const res = await fetch(this.url(path), {
+            method,
+            headers: this.headers,
+            body: body !== undefined ? JSON.stringify(body) : undefined,
+        });
+        if (!res.ok) {
+            const text = await res.text().catch(() => res.statusText);
+            throw new ClientError(method, path, res.status, text);
+        }
+        if (res.status === 204)
+            return undefined;
+        return res.json();
+    }
+    async streamRequest(method, path, body) {
+        const res = await fetch(this.url(path), {
+            method,
+            headers: { ...this.headers, Accept: "text/event-stream" },
+            body: JSON.stringify(body),
+        });
+        if (!res.ok || !res.body) {
+            const text = await res.text().catch(() => res.statusText);
+            throw new ClientError(method, path, res.status, text);
+        }
+        return parseSSE(res.body);
+    }
+    /** GET /meta */
+    async getMeta() {
+        const meta = await this.request("GET", "/meta");
+        if (meta.version !== 3) {
+            throw new Error(`Protocol version mismatch: expected 3, got ${meta.version}`);
+        }
+     ...
+
+--- Turn 18/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+npm search aap --long 2>/dev/null | head -50
+```
+
+[EXECUTING bash]:
+npm search aap --long 2>/dev/null | head -50
+
+[OUTPUT]:
+aap
+async-await package
+Version 0.0.1 published 2014-08-12 by piscisaureus
+Maintainers: piscisaureus
+https://npm.im/aap
+
+@agentapplicationprotocol/client
+AAP client
+Version 0.7.1 published 2026-04-07 by discretetom
+Maintainers: discretetom
+Keywords: aap agent agent-application-protocol ai client
+https://npm.im/@agentapplicationprotocol/client
+
+@agentapplicationprotocol/server
+AAP server
+Version 0.7.1 published 2026-04-07 by discretetom
+Maintainers: discretetom
+Keywords: aap agent agent-application-protocol ai server
+https://npm.im/@agentapplicationprotocol/server
+
+@agentapplicationprotocol/sdk
+TypeScript SDK for the Agent Application Protocol (AAP)
+Version 0.7.1 published 2026-04-07 by discretetom
+Maintainers: discretetom
+Keywords: aap agent agent-application-protocol ai sdk
+https://npm.im/@agentapplicationprotocol/sdk
+
+@janus-idp/backstage-plugin-aap-backend
+The Ansible Automation Platform (AAP) Backstage provider plugin synchronizes the accessible templates including job templates and workflow job templates from AAP into the [Backstage](https://backstage.io/) catalog.
+Version 2.4.0 published 2025-01-30 by nickboldt
+Maintainers: ktsao schultzp2020 tumido tomaskral asoro-rh fndlovu nickboldt pataknight
+Keywords: support:tech-preview lifecycle:active backstage plugin
+https://npm.im/@janus-idp/backstage-plugin-aap-backend
+
+@mnemom/agent-alignment-protocol
+Agent Alignment Protocol (AAP) - Verification and drift detection for AI agents
+Version 1.0.0 published 2026-04-13 by GitHub Actions
+Maintainers: alexgarden
+Keywords: ai agent alignment verification audit a2a mcp
+https://npm.im/@mnemom/agent-alignment-protocol
+
+@mnemom/smoltbot
+Transparent AI agent tracing - AAP compliant
+Version 0.7.0 published 2026-04-13 by GitHub Actions
+Maintainers: alexgarden
+Keywords: ai agent transparency aap alignment tracing observability openai gemini multi-provider gpt-5
+https://npm.im/@mnemom/smoltbot
+
+@affiliai/sdk
+JavaScript/TypeScript SDK for the Agent Attribution Protocol (AAP)
+
+
+--- Turn 19/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+npm install @mnemom/agent-alignment-protocol
+```
+
+[EXECUTING bash]:
+npm install @mnemom/agent-alignment-protocol
+
+[OUTPUT]:
+
+added 1 package, and audited 16 packages in 2s
+
+1 package is looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+
+
+--- Turn 20/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+ls -la /workspace/node_modules/@mnemom/agent-alignment-protocol/
+```
+
+[EXECUTING bash]:
+ls -la /workspace/node_modules/@mnemom/agent-alignment-protocol/
+
+[OUTPUT]:
+total 28
+drwxr-xr-x 4 root root   105 Apr 13 08:02 .
+drwxr-xr-x 3 root root    46 Apr 13 08:02 ..
+-rw-r--r-- 1 root root 10765 Apr 13 08:02 LICENSE
+-rw-r--r-- 1 root root 11347 Apr 13 08:02 README.md
+drwxr-xr-x 2 root root    96 Apr 13 08:02 dist
+-rw-r--r-- 1 root root  1266 Apr 13 08:02 package.json
+drwxr-xr-x 4 root root   122 Apr 13 08:02 src
+
+
+--- Turn 21/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/node_modules/@mnemom/agent-alignment-protocol/package.json
+```
+
+[EXECUTING bash]:
+cat /workspace/node_modules/@mnemom/agent-alignment-protocol/package.json
+
+[OUTPUT]:
+{
+  "name": "@mnemom/agent-alignment-protocol",
+  "version": "1.0.0",
+  "description": "Agent Alignment Protocol (AAP) - Verification and drift detection for AI agents",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean",
+    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "alignment",
+    "verification",
+    "audit",
+    "a2a",
+    "mcp"
+  ],
+  "author": "Mnemom.ai",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mnemom/aap"
+  },
+  "homepage": "https://mnemom.github.io/aap/",
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@vitest/coverage-v8": "^1.6.1",
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
+
+--- Turn 22/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/node_modules/@mnemom/agent-alignment-protocol/dist/index.js
+```
+
+[EXECUTING bash]:
+cat /workspace/node_modules/@mnemom/agent-alignment-protocol/dist/index.js
+
+[OUTPUT]:
+"use strict";
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+
+// src/index.ts
+var index_exports = {};
+__export(index_exports, {
+  ALGORITHM_VERSION: () => ALGORITHM_VERSION,
+  CLUSTER_COMPATIBILITY_THRESHOLD: () => CLUSTER_COMPATIBILITY_THRESHOLD,
+  CONFLICT_PENALTY_MULTIPLIER: () => CONFLICT_PENALTY_MULTIPLIER,
+  DEFAULT_SIMILARITY_THRESHOLD: () => DEFAULT_SIMILARITY_THRESHOLD,
+  DEFAULT_SUSTAINED_CHECKS_THRESHOLD: () => DEFAULT_SUSTAINED_CHECKS_THRESHOLD,
+  EU_COMPLIANCE_AUDIT_COMMITMENT: () => EU_COMPLIANCE_AUDIT_COMMITMENT,
+  EU_COMPLIANCE_EXTENSIONS: () => EU_COMPLIANCE_EXTENSIONS,
+  EU_COMPLIANCE_VALUES: () => EU_COMPLIANCE_VALUES,
+  MAX_TFIDF_FEATURES: () => MAX_TFIDF_FEATURES,
+  MIN_COHERENCE_FOR_PROCEED: () => MIN_COHERENCE_FOR_PROCEED,
+  MIN_WORD_LENGTH: () => MIN_WORD_LENGTH,
+  NEAR_BOUNDARY_THRESHOLD: () => NEAR_BOUNDARY_THRESHOLD,
+  OUTLIER_STD_DEV_THRESHOLD: () => OUTLIER_STD_DEV_THRESHOLD,
+  VIOLATION_SEVERITY: () => VIOLATION_SEVERITY,
+  analyzeFaultLines: () => analyzeFaultLines,
+  checkCoherence: () => checkCoherence,
+  checkFleetCoherence: () => checkFleetCoherence,
+  checkFleetFaultLines: () => checkFleetFaultLines,
+  computeCentroid: () => computeCentroid,
+  cosineSimilarity: () => cosineSimilarity,
+  createViolation: () ...
+
+--- Turn 23/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/node_modules/@mnemom/agent-alignment-protocol/README.md
+```
+
+[EXECUTING bash]:
+cat /workspace/node_modules/@mnemom/agent-alignment-protocol/README.md
+
+[OUTPUT]:
+# Agent Alignment Protocol (AAP)
+
+[![CI](https://github.com/mnemom/aap/actions/workflows/ci.yml/badge.svg)](https://github.com/mnemom/aap/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/mnemom/aap/actions/workflows/codeql.yml/badge.svg)](https://github.com/mnemom/aap/actions/workflows/codeql.yml)
+[![codecov](https://codecov.io/gh/mnemom/aap/graph/badge.svg?token=9KCOCI5SC5)](https://codecov.io/gh/mnemom/aap)
+[![PyPI](https://img.shields.io/pypi/v/agent-alignment-protocol.svg)](https://pypi.org/project/agent-alignment-protocol/)
+[![npm](https://img.shields.io/npm/v/@mnemom/agent-alignment-protocol.svg)](https://www.npmjs.com/package/@mnemom/agent-alignment-protocol)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Spec](https://img.shields.io/badge/spec-v0.4.0-green.svg)](docs/SPEC.md)
+
+**A transparency protocol for autonomous agents.**
+
+AAP lets agents declare their alignment posture, produce auditable decision traces, and verify value coherence before coordinating with other agents. It extends existing protocols (A2A, MCP) with an alignment layer that makes agent behavior observable.
+
+> AAP is a transparency protocol, not a trust protocol. It makes agent behavior more observable, not more guaranteed.
+
+## Quick Start
+
+```bash
+# Install
+pip install agent-alignment-protocol
+
+# Generate an Alignment Card
+aap init --values "principal_benefit,transparency,harm_prevention"
+# ✓ Created alignment-card.json
+
+# Instrument your agent
+```
+
+```python
+from aap import trace_decision
+
+@trace_decision(card_path="alignment-card.json")
+def recommend_product(user_preferences):
+    # Your agent logic here
+    # Decisions are automatically traced
+    ...
+```
+
+```bash
+# Verify behavior matches declaration
+aap verify --card alignment-card.json --trace logs/trace.json
+# ✓ Verified [similarity: 0.82]
+# Checks: autonomy, escalation, values, forbidden, behavioral_similarity
+```
+
+## Why AAP?
+
+The agent protocol stack provides capability discovery (A2A...
+
+--- Turn 24/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/node_modules/@mnemom/agent-alignment-protocol/src/index.ts
+```
+
+[EXECUTING bash]:
+cat /workspace/node_modules/@mnemom/agent-alignment-protocol/src/index.ts
+
+[OUTPUT]:
+/**
+ * Agent Alignment Protocol (AAP) - TypeScript SDK
+ *
+ * This package provides the core verification functionality for AAP:
+ * - verifyTrace: Verify a single AP-Trace against an Alignment Card
+ * - checkCoherence: Check value coherence between two Alignment Cards
+ * - detectDrift: Detect behavioral drift from declared alignment over time
+ *
+ * @example
+ * ```typescript
+ * import { verifyTrace, checkCoherence, detectDrift } from 'agent-alignment-protocol';
+ * import type { AlignmentCard, APTrace } from 'agent-alignment-protocol';
+ *
+ * // Verify a trace
+ * const result = verifyTrace(trace, card);
+ * if (!result.verified) {
+ *   console.log('Violations:', result.violations);
+ * }
+ *
+ * // Check coherence between two cards
+ * const coherence = checkCoherence(myCard, theirCard);
+ * if (!coherence.compatible) {
+ *   console.log('Value conflicts:', coherence.value_alignment.conflicts);
+ * }
+ *
+ * // Detect drift over time
+ * const alerts = detectDrift(card, recentTraces);
+ * for (const alert of alerts) {
+ *   console.log('Drift detected:', alert.analysis.drift_direction);
+ * }
+ * ```
+ *
+ * @see https://aap.dev for documentation
+ * @see SPEC.md for protocol specification
+ */
+
+// Main API exports
+export { verifyTrace, checkCoherence, checkFleetCoherence, detectDrift, analyzeFaultLines, checkFleetFaultLines } from "./verification/api";
+
+// Schema types
+export type {
+  // Alignment Card
+  AlignmentCard,
+  Principal,
+  PrincipalType,
+  RelationshipType,
+  Values,
+  ValueDefinition,
+  HierarchyType,
+  AutonomyEnvelope,
+  EscalationTrigger,
+  TriggerAction,
+  MonetaryValue,
+  AuditCommitment,
+  AuditStorage,
+  StorageType,
+  TamperEvidence,
+} from "./schemas/alignment-card";
+
+export type {
+  // AP-Trace
+  APTrace,
+  Action,
+  ActionType,
+  ActionCategory,
+  ActionTarget,
+  Decision,
+  Alternative,
+  Escalation,
+  EscalationStatus,
+  TriggerCheck,
+  PrincipalResponse,
+  TraceContext,
+} from "./schemas/ap-trace";
+
+export type {
+  // Value Coherence
+  AlignmentCardRequest,
+  Al...
+
+--- Turn 25/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/node_modules/@mnemom/agent-alignment-protocol/src/schemas/value-coherence.ts
+```
+
+[EXECUTING bash]:
+cat /workspace/node_modules/@mnemom/agent-alignment-protocol/src/schemas/value-coherence.ts
+
+[OUTPUT]:
+/**
+ * Value Coherence Handshake messages - Agent-to-agent alignment verification.
+ *
+ * Defines the message types for the Value Coherence Handshake protocol
+ * per SPEC Section 6.
+ *
+ * @see SPEC.md Section 6 for complete specification.
+ */
+
+import type { AlignmentCard } from "./alignment-card";
+
+/** Information about the agent making a request. */
+export interface RequesterInfo {
+  /** Agent identifier (DID, URL, or UUID) */
+  agent_id: string;
+  /** Requester's Alignment Card ID */
+  card_id: string;
+}
+
+/** Context about the task for which alignment is being checked. */
+export interface TaskContext {
+  /** Type of task being proposed */
+  task_type: string;
+  /** Values required for this task */
+  values_required?: string[] | null;
+  /** Categories of data involved */
+  data_categories?: string[] | null;
+}
+
+/** Request for an agent's Alignment Card (SPEC Section 6.3.1). */
+export interface AlignmentCardRequest {
+  /** Message type identifier */
+  message_type?: "alignment_card_request";
+  /** Unique request identifier */
+  request_id: string;
+  /** Information about requesting agent */
+  requester: RequesterInfo;
+  /** Context about the proposed task */
+  task_context?: TaskContext | null;
+  /** When request was made (ISO 8601) */
+  timestamp?: string;
+}
+
+/** Cryptographic signature for authentication. */
+export interface Signature {
+  /** Signature algorithm (e.g., Ed25519) */
+  algorithm: string;
+  /** Base64-encoded signature */
+  value: string;
+  /** Key identifier */
+  key_id: string;
+}
+
+/** Response with an agent's Alignment Card (SPEC Section 6.3.2). */
+export interface AlignmentCardResponse {
+  /** Message type identifier */
+  message_type?: "alignment_card_response";
+  /** Request ID being responded to */
+  request_id: string;
+  /** Responder's Alignment Card */
+  alignment_card: AlignmentCard;
+  /** Optional signature for authentication */
+  signature?: Signature | null;
+  /** When response was made (ISO 8601) */
+  timestamp?: string;
+}
+
+/** Data sharin...
+
+⚠️ Agent reached max turns (25)
+
+Conversation saved to results/repair_run_Qwen3.5-27B_20260413_160153/ira-hash-aap-passport_create_easy_001/conversation.json
+
+============================================================
+Running evaluation...
+============================================================
+
+Results for ira-hash-aap-passport_create_easy_001:
+  Passed: False
+  Score:  0.25
+  Checks:
+    ✅ input marker present: input_marker.txt present
+    ❌ server.js created: server.js missing
+    ❌ client.js created: client.js missing
+    ❌ references core demo details: expected demo references not found
+
+Cleaning up container d62618659e1f...
+Container removed.
+

@@ -1,0 +1,92 @@
+import json
+import re
+from pathlib import Path
+
+
+def normalize(text):
+    try:
+        text = text.lower()
+        text = re.sub(r"\s+", " ", text)
+        text = re.sub(r"[^a-z0-9\s]", "", text)
+        return text.strip()
+    except Exception:
+        return ""
+
+
+def safe_read(path):
+    try:
+        return Path(path).read_text(encoding="utf-8")
+    except Exception as e:
+        return None, str(e)
+
+
+def main(workspace_dir):
+    checks = []
+    ws = Path(workspace_dir)
+
+    output_path = ws / "result.md"
+    try:
+        exists = output_path.exists()
+        checks.append({
+            "name": "output_file_exists",
+            "passed": bool(exists),
+            "detail": "result.md is present" if exists else "result.md is missing",
+        })
+    except Exception as e:
+        checks.append({"name": "output_file_exists", "passed": False, "detail": f"error checking file existence: {e}"})
+
+    content = ""
+    try:
+        if output_path.exists():
+            content = output_path.read_text(encoding="utf-8")
+            ok = "adversarial" in normalize(content) and "recommendation" in normalize(content)
+            checks.append({
+                "name": "contains_core_sections",
+                "passed": bool(ok),
+                "detail": "content includes adversarial analysis and recommendation language" if ok else "required section keywords not found",
+            })
+        else:
+            checks.append({"name": "contains_core_sections", "passed": False, "detail": "cannot inspect missing result.md"})
+    except Exception as e:
+        checks.append({"name": "contains_core_sections", "passed": False, "detail": f"failed to read result.md: {e}"})
+
+    try:
+        n = normalize(content)
+        has_option = any(k in n for k in ["free tier", "trial", "usage based", "usagebased"])
+        checks.append({
+            "name": "mentions_all_options",
+            "passed": bool(has_option),
+            "detail": "mentions pricing options under review" if has_option else "pricing options not clearly mentioned",
+        })
+    except Exception as e:
+        checks.append({"name": "mentions_all_options", "passed": False, "detail": f"error analyzing content: {e}"})
+
+    try:
+        marker_paths = [ws / "data" / "pricing_brief.txt", ws / "data" / "market_signals.json", ws / "data" / "notes.md"]
+        all_present = all(p.exists() for p in marker_paths)
+        checks.append({
+            "name": "input_files_present",
+            "passed": bool(all_present),
+            "detail": "all generated input files are present" if all_present else "one or more generated input files are missing",
+        })
+    except Exception as e:
+        checks.append({"name": "input_files_present", "passed": False, "detail": f"error checking inputs: {e}"})
+
+    try:
+        total = len(checks) if checks else 1
+        passed_count = sum(1 for c in checks if c.get("passed"))
+        score = passed_count / total
+        passed = passed_count == total
+        result = {"passed": passed, "score": score, "checks": checks}
+        print(json.dumps(result, ensure_ascii=False))
+    except Exception:
+        print(json.dumps({"passed": False, "score": 0.0, "checks": checks}, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    import sys
+    try:
+        workspace = sys.argv[1] if len(sys.argv) > 1 else "."
+    except Exception:
+        workspace = "."
+    main(workspace)

@@ -1,0 +1,144 @@
+import json
+import os
+import re
+from pathlib import Path
+
+
+def safe_read_text(path):
+    try:
+        return Path(path).read_text(encoding='utf-8')
+    except Exception as e:
+        return None, str(e)
+
+
+def safe_load_json(path):
+    try:
+        return json.loads(Path(path).read_text(encoding='utf-8')), None
+    except Exception as e:
+        return None, str(e)
+
+
+def norm(s):
+    """Normalize string: lowercase, remove non-alphanumeric except spaces"""
+    return ''.join(ch.lower() for ch in str(s) if ch.isalnum() or ch.isspace())
+
+
+def word_exists_in_text(text, word):
+    """Check if word exists in text using case-insensitive regex matching"""
+    if not text or not word:
+        return False
+    # Use word boundary matching with case insensitivity
+    pattern = r'\b' + re.escape(word) + r'\b'
+    return bool(re.search(pattern, text, re.IGNORECASE))
+
+
+workspace = Path(__import__('sys').argv[1])
+checks = []
+
+try:
+    limit_path = workspace / 'inputs' / 'limit.json'
+    session_path = workspace / 'inputs' / 'session.json'
+    json_path = workspace / 'tokenguard_summary.json'
+    txt_path = workspace / 'tokenguard_summary.txt'
+
+    limit_data, limit_err = safe_load_json(limit_path)
+    session_data, session_err = safe_load_json(session_path)
+
+    if limit_data is None:
+        checks.append({'name': 'input_limit_readable', 'passed': False, 'detail': f'Could not read limit.json: {limit_err}'})
+    else:
+        # Normalize both the marker value and the expected pattern (remove underscores for comparison)
+        marker_value = norm(limit_data.get('marker', ''))
+        expected_marker = norm('tokenguard_limit_marker_alpha_7421')
+        marker_ok = expected_marker in marker_value
+        checks.append({'name': 'input_limit_marker', 'passed': marker_ok, 'detail': 'Limit marker found' if marker_ok else 'Limit marker missing or incorrect'})
+
+    if session_data is None:
+        checks.append({'name': 'input_session_readable', 'passed': False, 'detail': f'Could not read session.json: {session_err}'})
+    else:
+        # Normalize both the marker value and the expected pattern (remove underscores for comparison)
+        marker_value = norm(session_data.get('marker', ''))
+        expected_marker = norm('tokenguard_session_marker_beta_9183')
+        marker_ok = expected_marker in marker_value
+        checks.append({'name': 'input_session_marker', 'passed': marker_ok, 'detail': 'Session marker found' if marker_ok else 'Session marker missing or incorrect'})
+
+    json_exists = json_path.exists()
+    txt_exists = txt_path.exists()
+    checks.append({'name': 'json_exists', 'passed': json_exists, 'detail': 'tokenguard_summary.json exists' if json_exists else 'tokenguard_summary.json is missing'})
+    checks.append({'name': 'txt_exists', 'passed': txt_exists, 'detail': 'tokenguard_summary.txt exists' if txt_exists else 'tokenguard_summary.txt is missing'})
+
+    json_data = None
+    if json_exists:
+        try:
+            json_data = json.loads(json_path.read_text(encoding='utf-8'))
+            checks.append({'name': 'json_parses', 'passed': True, 'detail': 'Summary JSON parses successfully'})
+        except Exception as e:
+            checks.append({'name': 'json_parses', 'passed': False, 'detail': f'Summary JSON malformed: {e}'})
+    else:
+        checks.append({'name': 'json_parses', 'passed': False, 'detail': 'Summary JSON missing'})
+
+    # Check JSON content with forgiving matching
+    if json_data is not None:
+        try:
+            limit_val = float(limit_data.get('current_limit_usd', 0)) if limit_data else 0.0
+            spent_val = float(session_data.get('spent_usd', 0)) if session_data else 0.0
+            remaining_val = limit_val - spent_val
+            warning_val = float(limit_data.get('warning_pct', 0)) if limit_data else 0.0
+            would_fit = (spent_val + 5.0) <= limit_val
+
+            def fuzzy_has(container, key_names):
+                if isinstance(container, dict):
+                    for k, v in container.items():
+                        nk = norm(k)
+                        if any(key in nk for key in key_names):
+                            return v
+                return None
+
+            limit_out = fuzzy_has(json_data, ['limit'])
+            spent_out = fuzzy_has(json_data, ['spent'])
+            remaining_out = fuzzy_has(json_data, ['remaining'])
+            warning_out = fuzzy_has(json_data, ['warning'])
+            fit_out = fuzzy_has(json_data, ['fit', 'budget'])
+            entries_out = fuzzy_has(json_data, ['entries', 'logs', 'history'])
+
+            checks.append({'name': 'json_has_limit', 'passed': limit_out is not None, 'detail': 'Limit field present' if limit_out is not None else 'Missing limit field'})
+            checks.append({'name': 'json_has_spent', 'passed': spent_out is not None, 'detail': 'Spent field present' if spent_out is not None else 'Missing spent field'})
+            checks.append({'name': 'json_has_remaining', 'passed': remaining_out is not None, 'detail': 'Remaining field present' if remaining_out is not None else 'Missing remaining field'})
+            checks.append({'name': 'json_has_warning', 'passed': warning_out is not None, 'detail': 'Warning field present' if warning_out is not None else 'Missing warning field'})
+            checks.append({'name': 'json_has_entries', 'passed': isinstance(entries_out, list), 'detail': 'Entries list present' if isinstance(entries_out, list) else 'Missing entries list'})
+
+            approx_ok = True
+            try:
+                approx_ok = abs(float(limit_out) - limit_val) < 1e-6 and abs(float(spent_out) - spent_val) < 1e-6 and abs(float(remaining_out) - remaining_val) < 1e-6
+            except Exception:
+                approx_ok = False
+            checks.append({'name': 'json_numeric_values', 'passed': approx_ok, 'detail': f'Expected limit/spent/remaining around {limit_val}/{spent_val}/{remaining_val}'})
+
+            fit_ok = True
+            try:
+                fit_ok = bool(fit_out) == would_fit
+            except Exception:
+                fit_ok = False
+            checks.append({'name': 'json_budget_fit', 'passed': fit_ok, 'detail': f'Expected would_fit={would_fit}'})
+        except Exception as e:
+            checks.append({'name': 'json_content_validation', 'passed': False, 'detail': f'Error validating summary JSON: {e}'})
+
+    if txt_exists:
+        try:
+            txt = txt_path.read_text(encoding='utf-8')
+            # Check for core terms using case-insensitive regex matching
+            pieces = ['tokenguard', 'limit', 'spent', 'remaining', 'warning']
+            ok = all(word_exists_in_text(txt, p) for p in pieces)
+            # Also check for entry/entries
+            entry_ok = word_exists_in_text(txt, 'entry')
+            ok = ok and entry_ok
+            checks.append({'name': 'txt_contains_summary_terms', 'passed': ok, 'detail': 'Text summary contains core terms' if ok else 'Text summary missing one or more core terms'})
+        except Exception as e:
+            checks.append({'name': 'txt_contains_summary_terms', 'passed': False, 'detail': f'Could not read text summary: {e}'})
+
+except Exception as e:
+    checks.append({'name': 'top_level_error', 'passed': False, 'detail': str(e)})
+
+passed = all(c['passed'] for c in checks) if checks else False
+score = (sum(1 for c in checks if c['passed']) / len(checks)) if checks else 0.0
+print(json.dumps({'passed': passed, 'score': score, 'checks': checks}, ensure_ascii=False))

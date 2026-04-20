@@ -1,0 +1,115 @@
+import json
+import os
+import sys
+from pathlib import Path
+
+
+def norm(s):
+    try:
+        return ''.join(ch.lower() for ch in str(s) if ch.isalnum())
+    except Exception:
+        return ''
+
+
+def safe_read_text(path):
+    try:
+        return Path(path).read_text(encoding='utf-8', errors='ignore')
+    except Exception as e:
+        return None, str(e)
+
+
+def main():
+    checks = []
+    workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+
+    output_path = workspace / 'output.json'
+    try:
+        if output_path.exists():
+            data = json.loads(output_path.read_text(encoding='utf-8', errors='ignore'))
+            passed = isinstance(data, dict)
+            checks.append({
+                'name': 'output_exists_and_parses',
+                'passed': passed,
+                'detail': 'output.json parsed successfully' if passed else 'output.json is not a JSON object'
+            })
+        else:
+            checks.append({
+                'name': 'output_exists_and_parses',
+                'passed': False,
+                'detail': 'output.json is missing'
+            })
+            data = {}
+    except Exception as e:
+        checks.append({'name': 'output_exists_and_parses', 'passed': False, 'detail': f'failed to parse output.json: {e}'})
+        data = {}
+
+    try:
+        required_keys = {'recent_conversations', 'resolved_entities', 'relationships', 'relevant_history'}
+        actual_keys = set(data.keys()) if isinstance(data, dict) else set()
+        missing = sorted(required_keys - actual_keys)
+        passed = not missing
+        checks.append({
+            'name': 'required_top_level_keys',
+            'passed': passed,
+            'detail': 'all required keys present' if passed else f'missing keys: {missing}'
+        })
+    except Exception as e:
+        checks.append({'name': 'required_top_level_keys', 'passed': False, 'detail': f'error checking keys: {e}'})
+
+    try:
+        recent = data.get('recent_conversations', []) if isinstance(data, dict) else []
+        passed = isinstance(recent, list) and len(recent) >= 2
+        checks.append({
+            'name': 'recent_conversations_content',
+            'passed': passed,
+            'detail': f'found {len(recent) if isinstance(recent, list) else "non-list"} recent conversations'
+        })
+    except Exception as e:
+        checks.append({'name': 'recent_conversations_content', 'passed': False, 'detail': f'error checking recent_conversations: {e}'})
+
+    try:
+        entities = data.get('resolved_entities', []) if isinstance(data, dict) else []
+        entity_blob = ' '.join(json.dumps(entities, ensure_ascii=False) if isinstance(entities, (list, dict)) else [str(entities)])
+        target_markers = ['orion', 'northstar', 'labs', 'avery', 'nina', 'marco']
+        matched = sum(1 for m in target_markers if norm(m) in norm(entity_blob))
+        passed = matched >= 4
+        checks.append({
+            'name': 'resolved_entities_markers',
+            'passed': passed,
+            'detail': f'matched {matched}/{len(target_markers)} entity markers'
+        })
+    except Exception as e:
+        checks.append({'name': 'resolved_entities_markers', 'passed': False, 'detail': f'error checking entities: {e}'})
+
+    try:
+        rels = data.get('relationships', []) if isinstance(data, dict) else []
+        rel_blob = json.dumps(rels, ensure_ascii=False) if isinstance(rels, (list, dict)) else str(rels)
+        passed = ('works_on' in norm(rel_blob)) or ('clientof' in norm(rel_blob))
+        checks.append({
+            'name': 'relationships_include_expected_types',
+            'passed': passed,
+            'detail': 'relationship types mention works_on/client_of' if passed else 'missing expected relationship types'
+        })
+    except Exception as e:
+        checks.append({'name': 'relationships_include_expected_types', 'passed': False, 'detail': f'error checking relationships: {e}'})
+
+    try:
+        hist = data.get('relevant_history', []) if isinstance(data, dict) else []
+        passed = isinstance(hist, list) and any('privacy' in norm(x) or 'sqlite' in norm(x) for x in hist)
+        checks.append({
+            'name': 'relevant_history_mentions_privacy_or_storage',
+            'passed': passed,
+            'detail': 'history mentions privacy or storage' if passed else 'no privacy/storage history found'
+        })
+    except Exception as e:
+        checks.append({'name': 'relevant_history_mentions_privacy_or_storage', 'passed': False, 'detail': f'error checking relevant_history: {e}'})
+
+    total = len(checks)
+    passed_count = sum(1 for c in checks if c.get('passed'))
+    score = passed_count / total if total else 0.0
+    result = {'passed': passed_count == total, 'score': score, 'checks': checks}
+    print(json.dumps(result, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    main()

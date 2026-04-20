@@ -120,26 +120,31 @@ def run_agent_in_container(
 
         messages.append({"role": "assistant", "content": assistant_msg})
 
+        # 1. 优先提取并执行代码块
+        code_block = _extract_code_block(assistant_msg)
+        if code_block:
+            lang, code = code_block
+            output = _run_in_container(sandbox, container_id, lang, code)
+
+            truncated_output = output[:MAX_OUTPUT_CHARS]
+            if len(output) > MAX_OUTPUT_CHARS:
+                truncated_output += f"\n... [truncated, {len(output)} chars total]"
+            
+            messages.append({
+                "role": "user",
+                "content": f"Command output:\n```\n{truncated_output}\n```\nContinue with the task. If done, say TASK_COMPLETE.",
+            })
+
+        # 2. 代码执行完后，再检查是否需要结束任务
         if "TASK_COMPLETE" in assistant_msg:
             break
 
-        code_block = _extract_code_block(assistant_msg)
-        if code_block is None:
+        # 3. 如果既没给代码，也没说完成，提醒模型
+        if code_block is None and "TASK_COMPLETE" not in assistant_msg:
             messages.append({
                 "role": "user",
                 "content": "Please provide a command to execute (in a ```bash or ```python code block), or say TASK_COMPLETE if done.",
             })
             continue
-
-        lang, code = code_block
-        output = _run_in_container(sandbox, container_id, lang, code)
-
-        truncated_output = output[:MAX_OUTPUT_CHARS]
-        if len(output) > MAX_OUTPUT_CHARS:
-            truncated_output += f"\n... [truncated, {len(output)} chars total]"
-        messages.append({
-            "role": "user",
-            "content": f"Command output:\n```\n{truncated_output}\n```\nContinue with the task. If done, say TASK_COMPLETE.",
-        })
 
     return messages

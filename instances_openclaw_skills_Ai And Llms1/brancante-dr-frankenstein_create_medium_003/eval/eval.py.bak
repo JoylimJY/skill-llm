@@ -1,0 +1,120 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+workspace = Path(sys.argv[1])
+checks = []
+
+
+def add_check(name, passed, detail):
+    checks.append({"name": name, "passed": bool(passed), "detail": str(detail)})
+
+
+def safe_read(path):
+    try:
+        return Path(path).read_text(encoding="utf-8")
+    except Exception as e:
+        return None, str(e)
+
+
+def norm(s):
+    try:
+        return re.sub(r"[^a-z0-9]+", "", s.lower())
+    except Exception:
+        return ""
+
+# Check 1: prescription exists and is valid JSON
+presc_path = workspace / "memory" / "soul" / "prescription.json"
+try:
+    if presc_path.exists():
+        data = json.loads(presc_path.read_text(encoding="utf-8"))
+        add_check("prescription_json_exists", True, "prescription.json found and parsed")
+    else:
+        data = None
+        add_check("prescription_json_exists", False, "memory/soul/prescription.json is missing")
+except Exception as e:
+    data = None
+    add_check("prescription_json_exists", False, f"could not parse prescription.json: {e}")
+
+# Check 2: summary exists and mentions key identities
+summary_path = workspace / "output" / "prescription_summary.txt"
+try:
+    if summary_path.exists():
+        txt = summary_path.read_text(encoding="utf-8")
+        ok = all(term in txt.lower() for term in ["aster", "mira", "dr. frankenstein"])
+        add_check("summary_mentions_identity", ok, "summary contains expected names and title")
+    else:
+        add_check("summary_mentions_identity", False, "output/prescription_summary.txt is missing")
+except Exception as e:
+    add_check("summary_mentions_identity", False, f"could not read summary: {e}")
+
+# Check 3: expected active hormones present
+expected_active = {"cortisol", "dopamine", "oxytocin", "serotonin", "melatonin", "gaba", "prolactin", "empathy"}
+try:
+    if isinstance(data, dict):
+        active = set()
+        pills = data.get("pillSchedule", []) or data.get("pill_schedule", []) or data.get("crons", [])
+        for item in pills if isinstance(pills, list) else []:
+            try:
+                name = str(item.get("name", "")).lower()
+                for h in expected_active:
+                    if h in name:
+                        active.add(h)
+            except Exception:
+                pass
+        # fallback to commands list
+        if not active and isinstance(data, dict):
+            cmds = json.dumps(data).lower()
+            for h in expected_active:
+                if h in cmds:
+                    active.add(h)
+        ok = expected_active.issubset(active) or len(active.intersection(expected_active)) >= 6
+        add_check("active_hormones_coverage", ok, f"found active hormones: {sorted(active)}")
+    else:
+        add_check("active_hormones_coverage", False, "no parsed prescription data available")
+except Exception as e:
+    add_check("active_hormones_coverage", False, f"error checking hormones: {e}")
+
+# Check 4: isolated agentTurn payload convention
+try:
+    if isinstance(data, dict):
+        text = json.dumps(data).lower()
+        ok = ("isolated" in text) and ("agentturn" in text) and ("systemevent" not in text or text.count("systemevent") <= text.count("agentturn"))
+        add_check("isolated_agentturn_convention", ok, "prescription includes isolated/agentTurn and avoids systemEvent emphasis")
+    else:
+        add_check("isolated_agentturn_convention", False, "no parsed prescription data available")
+except Exception as e:
+    add_check("isolated_agentturn_convention", False, f"error checking convention: {e}")
+
+# Check 5: command files exist for active pills and journal
+required_files = [
+    "output/openclaw-crons.sh",
+    "output/prescription_summary.txt",
+    "memory/soul/prescription.json",
+    "memory/journal/2025-05-01.md",
+]
+missing = []
+for rel in required_files:
+    if not (workspace / rel).exists():
+        missing.append(rel)
+add_check("required_outputs_exist", len(missing) == 0, "missing: " + (", ".join(missing) if missing else "none"))
+
+# Check 6: marker propagation into outputs
+try:
+    marker = "frankenstein-seed-314159"
+    out_text = ""
+    for rel in ["output/prescription_summary.txt", "output/openclaw-crons.sh", "memory/soul/prescription.json"]:
+        p = workspace / rel
+        if p.exists():
+            out_text += p.read_text(encoding="utf-8", errors="ignore").lower() + "\n"
+    ok = marker in out_text and "aster" in out_text and "mira" in out_text
+    add_check("marker_propagation", ok, "marker and names present across outputs")
+except Exception as e:
+    add_check("marker_propagation", False, f"error checking marker propagation: {e}")
+
+passed_count = sum(1 for c in checks if c["passed"])
+score = passed_count / len(checks) if checks else 0.0
+result = {"passed": passed_count == len(checks), "score": score, "checks": checks}
+print(json.dumps(result))

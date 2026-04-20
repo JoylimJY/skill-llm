@@ -1,11 +1,11 @@
 #!/bin/bash
 # Filter tasks: run agent 16 times on each built instance.
 # Discard tasks where ALL 16 pass (too easy) or NONE pass (unsolvable).
-
-API_BASE="${FILTER_API_BASE:-http://11.11.24.2:8200/v1}"
-MODEL="${FILTER_MODEL:-Qwen3.5-27B}"
+INSTANCES_DIR="${FILTER_INSTANCES_DIR:-instances}"  
+API_BASE="${FILTER_API_BASE:-http://11.11.24.2:8300/v1}"
+MODEL="${FILTER_MODEL:-Qwen3.5-9B}"
 NUM_TRIALS="${FILTER_NUM_TRIALS:-16}"
-CONCURRENCY="${FILTER_CONCURRENCY:-4}"
+CONCURRENCY="${FILTER_CONCURRENCY:-16}"
 
 echo "=== Task Filtering ==="
 echo "  Model:        $MODEL"
@@ -16,7 +16,7 @@ echo "  Rule:         discard if ALL pass (too easy) or NONE pass (unsolvable)"
 echo ""
 
 uv run python -m src.run filter \
-    --output-dir instances \
+    --output-dir "$INSTANCES_DIR" \
     --api-base "$API_BASE" \
     --model "$MODEL" \
     --num-trials "$NUM_TRIALS" \
@@ -30,7 +30,7 @@ import json
 from pathlib import Path
 from collections import Counter
 
-instances_dir = Path('instances')
+instances_dir = Path('$INSTANCES_DIR')
 statuses = Counter()
 for d in sorted(instances_dir.iterdir()):
     task_json = d / 'task.json'

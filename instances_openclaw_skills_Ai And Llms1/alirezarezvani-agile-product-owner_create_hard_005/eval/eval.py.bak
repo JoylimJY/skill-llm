@@ -1,0 +1,136 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+
+def norm(s):
+    try:
+        return re.sub(r'[^a-z0-9]+', ' ', str(s).lower()).strip()
+    except Exception:
+        return ''
+
+
+def safe_read(path):
+    try:
+        return Path(path).read_text(encoding='utf-8', errors='ignore')
+    except Exception as e:
+        return None, str(e)
+
+
+def main():
+    checks = []
+    ws = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+
+    def add(name, passed, detail):
+        checks.append({'name': name, 'passed': bool(passed), 'detail': detail})
+
+    expected_files = [
+        'backlog_package.json',
+        'sprint_plan.md',
+        'epic_breakdown.md'
+    ]
+
+    try:
+        for fname in expected_files:
+            p = ws / fname
+            add(f'file_exists::{fname}', p.exists(), f"{'found' if p.exists() else 'missing'}")
+    except Exception as e:
+        add('file_exists::exception', False, f'exception: {e}')
+
+    package = {}
+    try:
+        text, err = safe_read(ws / 'backlog_package.json')
+        if text is None:
+            add('package_parse', False, f'read failed: {err}')
+        else:
+            try:
+                package = json.loads(text)
+                add('package_parse', True, 'json parsed')
+            except Exception as e:
+                add('package_parse', False, f'json error: {e}')
+    except Exception as e:
+        add('package_parse_outer', False, f'exception: {e}')
+
+    marker_found = False
+    try:
+        marker = 'po-marker-7f3a'
+        blob = json.dumps(package).lower() if package else ''
+        for fname in ['sprint_plan.md', 'epic_breakdown.md']:
+            text, _ = safe_read(ws / fname)
+            if text:
+                blob += '\n' + text.lower()
+        marker_found = marker in norm(blob) or 'po marker 7f3a' in norm(blob)
+        add('marker_preserved', marker_found, 'marker present' if marker_found else 'marker missing')
+    except Exception as e:
+        add('marker_preserved', False, f'exception: {e}')
+
+    try:
+        stories = package.get('stories', []) if isinstance(package, dict) else []
+        story_ok = isinstance(stories, list) and len(stories) >= 4
+        add('story_count', story_ok, f'count={len(stories) if isinstance(stories, list) else "n/a"}')
+    except Exception as e:
+        add('story_count', False, f'exception: {e}')
+        stories = []
+
+    try:
+        point_sum = 0
+        bad_points = []
+        for s in stories if isinstance(stories, list) else []:
+            pts = s.get('points') if isinstance(s, dict) else None
+            try:
+                p = int(pts)
+                point_sum += p
+                if p > 8:
+                    bad_points.append(p)
+            except Exception:
+                bad_points.append(str(pts))
+        add('points_cap', len(bad_points) == 0, f"{'all stories <=8' if not bad_points else 'invalid points: ' + ','.join(map(str,bad_points))}")
+    except Exception as e:
+        add('points_cap', False, f'exception: {e}')
+        point_sum = 0
+
+    try:
+        sprint = package.get('sprint', {}) if isinstance(package, dict) else {}
+        committed = int(sprint.get('committed_points', 0))
+        capacity = int(sprint.get('capacity_points', 0))
+        threshold = int(capacity * 0.85) if capacity else 0
+        ok = capacity > 0 and committed <= threshold
+        add('capacity_rule', ok, f'capacity={capacity}, committed={committed}, threshold={threshold}')
+    except Exception as e:
+        add('capacity_rule', False, f'exception: {e}')
+
+    try:
+        plan_text, err = safe_read(ws / 'sprint_plan.md')
+        if plan_text is None:
+            add('sprint_plan_content', False, f'read failed: {err}')
+        else:
+            nt = norm(plan_text)
+            has_goal = 'sprint goal' in nt or 'goal' in nt
+            has_committed = 'committed' in nt
+            has_stretch = 'stretch' in nt
+            add('sprint_plan_content', has_goal and has_committed and has_stretch, f'goal={has_goal}, committed={has_committed}, stretch={has_stretch}')
+    except Exception as e:
+        add('sprint_plan_content', False, f'exception: {e}')
+
+    try:
+        epic_text, err = safe_read(ws / 'epic_breakdown.md')
+        if epic_text is None:
+            add('epic_breakdown_content', False, f'read failed: {err}')
+        else:
+            nt = norm(epic_text)
+            has_individual = 'standalone' in nt or 'independent' in nt
+            has_value = 'value' in nt
+            has_sequence = 'dependency' in nt or 'sequence' in nt
+            add('epic_breakdown_content', has_individual and has_value and has_sequence, f'independent={has_individual}, value={has_value}, sequence={has_sequence}')
+    except Exception as e:
+        add('epic_breakdown_content', False, f'exception: {e}')
+
+    passed = all(c['passed'] for c in checks)
+    score = (sum(1 for c in checks if c['passed']) / len(checks)) if checks else 0.0
+    result = {'passed': passed, 'score': score, 'checks': checks}
+    print(json.dumps(result))
+
+if __name__ == '__main__':
+    main()

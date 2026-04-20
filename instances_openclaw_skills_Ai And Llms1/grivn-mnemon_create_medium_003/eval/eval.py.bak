@@ -1,0 +1,119 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+
+def safe_read(path):
+    try:
+        return Path(path).read_text(encoding="utf-8", errors="replace")
+    except Exception as e:
+        return None, str(e)
+
+
+def norm(s):
+    try:
+        return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
+    except Exception:
+        return ""
+
+
+def main():
+    checks = []
+    ws = Path(sys.argv[1])
+
+    def add_check(name, passed, detail):
+        checks.append({"name": name, "passed": bool(passed), "detail": str(detail)})
+
+    try:
+        expected_path = ws / "expected_manifest.json"
+        expected = {}
+        try:
+            expected = json.loads(expected_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            add_check("manifest readable", False, f"Could not read expected_manifest.json: {e}")
+            expected = {}
+
+        marker_note = expected.get("marker_note", "AURORA-ALPHA-91")
+        marker_task = expected.get("marker_task", "TASK-BRIEF-44")
+
+        # Candidate files: tolerate a few common names.
+        candidate_names = [
+            "memory_log.json",
+            "memories.json",
+            "mnemon.json",
+            "output.json",
+            "result.json",
+            "store.json",
+        ]
+        found_path = None
+        for name in candidate_names:
+            p = ws / name
+            if p.exists():
+                found_path = p
+                break
+
+        if found_path is None:
+            add_check("output file exists", False, "No expected output file found in workspace")
+            # continue with remaining checks as failed, without crashing
+            content = ""
+        else:
+            try:
+                content = found_path.read_text(encoding="utf-8", errors="replace")
+                add_check("output file exists", True, f"Found {found_path.name}")
+            except Exception as e:
+                content = ""
+                add_check("output file exists", False, f"Could not read {found_path.name}: {e}")
+
+        # Check markers from the provided input files appear somewhere in output.
+        ncontent = norm(content)
+        add_check(
+            "contains note marker",
+            marker_note.lower() in ncontent,
+            f"Searched for marker {marker_note}",
+        )
+        add_check(
+            "contains task marker",
+            marker_task.lower() in ncontent,
+            f"Searched for marker {marker_task}",
+        )
+
+        # Try to detect five stored facts, forgiving about structure.
+        fact_hits = 0
+        fact_keywords = [
+            ["launch review", "friday", "monday", "qa"],
+            ["nina", "concise", "bullet"],
+            ["api endpoint", "stable", "sprint"],
+            ["rollback playbook", "payments"],
+            ["demo failure", "missing environment variable", "staging"],
+        ]
+        for group in fact_keywords:
+            if all(term in ncontent for term in group):
+                fact_hits += 1
+        add_check("stores expected facts", fact_hits >= 4, f"Matched {fact_hits}/5 fact groups in output")
+
+        # Check for at least two links/relations if output is structured enough.
+        link_terms = ["causal", "semantic", "linked", "relation", "edge"]
+        link_score = sum(1 for t in link_terms if t in ncontent)
+        add_check("has relationships", link_score >= 2, f"Found {link_score} relationship-related terms")
+
+        # Basic JSON sanity if output itself is JSON.
+        json_ok = False
+        try:
+            parsed = json.loads(content)
+            json_ok = isinstance(parsed, (dict, list))
+        except Exception:
+            parsed = None
+        add_check("output parseable or text-valid", json_ok or len(content.strip()) > 0, "Output is non-empty; JSON parse preferred but not required")
+
+    except Exception as e:
+        add_check("unexpected error", False, f"Eval encountered error: {e}")
+
+    passed = all(c["passed"] for c in checks)
+    score = (sum(1 for c in checks if c["passed"]) / len(checks)) if checks else 0.0
+    print(json.dumps({"passed": passed, "score": score, "checks": checks}, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,121 @@
+import json
+import os
+import re
+from pathlib import Path
+
+workspace = Path(__import__('sys').argv[1])
+checks = []
+
+def add_check(name, passed, detail):
+    checks.append({'name': name, 'passed': bool(passed), 'detail': str(detail)})
+
+# Helper functions
+
+def read_text(path):
+    try:
+        return Path(path).read_text(encoding='utf-8')
+    except Exception as e:
+        return None, f'could not read {path}: {e}'
+
+
+def fuzzy_contains(text, needles):
+    try:
+        t = (text or '').lower()
+        return all(n.lower() in t for n in needles)
+    except Exception:
+        return False
+
+# 1) config.json should exist and retain marker/property compatibility
+try:
+    config_path = workspace / 'config.json'
+    if not config_path.exists():
+        add_check('config_exists', False, 'config.json missing')
+        config = None
+    else:
+        try:
+            config = json.loads(config_path.read_text(encoding='utf-8'))
+            ok = isinstance(config, dict)
+            detail = 'loaded' if ok else 'config is not a JSON object'
+            add_check('config_exists', ok, detail)
+        except Exception as e:
+            config = None
+            add_check('config_exists', False, f'config.json malformed: {e}')
+except Exception as e:
+    config = None
+    add_check('config_exists', False, f'unexpected error: {e}')
+
+# 2) state.json should exist and be parseable
+try:
+    state_path = workspace / 'state.json'
+    if not state_path.exists():
+        add_check('state_exists', False, 'state.json missing')
+        state = None
+    else:
+        try:
+            state = json.loads(state_path.read_text(encoding='utf-8'))
+            ok = isinstance(state, dict)
+            detail = 'loaded' if ok else 'state is not a JSON object'
+            add_check('state_exists', ok, detail)
+        except Exception as e:
+            state = None
+            add_check('state_exists', False, f'state.json malformed: {e}')
+except Exception as e:
+    state = None
+    add_check('state_exists', False, f'unexpected error: {e}')
+
+# 3) Display should preserve auto-idle behavior references in source
+try:
+    src = (workspace / 'scripts' / 'display.py').read_text(encoding='utf-8')
+    ok = fuzzy_contains(src, ['idle_timeout']) and fuzzy_contains(src, ['state', 'sleep']) and fuzzy_contains(src, ['load_monogram'])
+    add_check('display_preserves_core_behavior', ok, 'expects idle timeout, sleep state, and monogram loading logic in display.py')
+except Exception as e:
+    add_check('display_preserves_core_behavior', False, f'could not inspect display.py: {e}')
+
+# 4) Footer/mode hint addition: look for a footer-like render and script name mention
+try:
+    src = (workspace / 'scripts' / 'display.py').read_text(encoding='utf-8')
+    ok = fuzzy_contains(src, ['footer']) or fuzzy_contains(src, ['mode hint']) or fuzzy_contains(src, ['script name']) or re.search(r'__file__', src, re.I)
+    ok = bool(ok) and (fuzzy_contains(src, ['display']) or fuzzy_contains(src, ['status']) or fuzzy_contains(src, ['configure']))
+    add_check('display_footer_added', ok, 'expected some footer/script-name related rendering in display.py')
+except Exception as e:
+    add_check('display_footer_added', False, f'could not inspect display.py: {e}')
+
+# 5) configure should be safe on fresh checkout and not clobber existing config markers
+try:
+    src = (workspace / 'scripts' / 'configure.py').read_text(encoding='utf-8')
+    ok = fuzzy_contains(src, ['load_config']) and fuzzy_contains(src, ['save_config']) and fuzzy_contains(src, ['auto'])
+    add_check('configure_safe_init_support', ok, 'expects load/save config and auto-detection support')
+except Exception as e:
+    add_check('configure_safe_init_support', False, f'could not inspect configure.py: {e}')
+
+# 6) Monogram preference: if a custom monogram exists, the code should reference assets/monograms and use the configured letter
+try:
+    src = (workspace / 'scripts' / 'display.py').read_text(encoding='utf-8')
+    ok = fuzzy_contains(src, ['assets', 'monograms']) and fuzzy_contains(src, ['mono_file']) and fuzzy_contains(src, ['fallback'])
+    add_check('custom_monogram_preference', ok, 'expected custom monogram lookup with fallback behavior')
+except Exception as e:
+    add_check('custom_monogram_preference', False, f'could not inspect display.py: {e}')
+
+# 7) Verify generated marker files remain present (objective file checks)
+try:
+    marker_file = workspace / 'assets' / 'monograms' / 'M.txt'
+    if not marker_file.exists():
+        add_check('marker_monogram_present', False, 'assets/monograms/M.txt missing')
+    else:
+        try:
+            txt = marker_file.read_text(encoding='utf-8')
+            ok = 'MARKER-MONO-M-TOP' in txt and 'MARKER-MONO-M-BOTTOM' in txt
+            add_check('marker_monogram_present', ok, 'marker lines verified' if ok else 'marker lines missing')
+        except Exception as e:
+            add_check('marker_monogram_present', False, f'could not read marker monogram: {e}')
+except Exception as e:
+    add_check('marker_monogram_present', False, f'unexpected error: {e}')
+
+# Score
+passed_count = sum(1 for c in checks if c['passed'])
+total = len(checks) if checks else 1
+score = passed_count / total
+passed = passed_count == total
+
+result = {'passed': passed, 'score': score, 'checks': checks}
+print(json.dumps(result, indent=2))

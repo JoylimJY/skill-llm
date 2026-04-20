@@ -1,0 +1,93 @@
+import json
+import re
+from pathlib import Path
+
+
+def load_text(path):
+    try:
+        return Path(path).read_text(encoding='utf-8')
+    except Exception as e:
+        return None, str(e)
+
+
+def normalize(s):
+    try:
+        return re.sub(r'[^a-z0-9]+', '', s.lower())
+    except Exception:
+        return ''
+
+
+def main(workspace):
+    checks = []
+    ws = Path(workspace)
+    target = Path('/home/clawd/clawd/data/birthdays.md')
+
+    # Check 1: output file exists
+    try:
+        exists = target.exists()
+        checks.append({
+            'name': 'output_file_exists',
+            'passed': bool(exists),
+            'detail': f'{target} exists' if exists else f'{target} is missing'
+        })
+    except Exception as e:
+        checks.append({'name': 'output_file_exists', 'passed': False, 'detail': f'error: {e}'})
+
+    content = ''
+    if target.exists():
+        try:
+            content = target.read_text(encoding='utf-8')
+        except Exception as e:
+            content = ''
+            checks.append({'name': 'read_output', 'passed': False, 'detail': f'could not read output file: {e}'})
+
+    expected = [
+        ('Valentina', ['14.02.2000', '14.02.', 'wird 26']),
+        ('Max', ['15.03.1990', 'wird 36', '15.03.']),
+        ('Lina', ['29.02.2004', 'wird 22', '29.02.']),
+        ('Tom', ['01.12.', '1.12.'])
+    ]
+
+    # Check 2-5: each person present with normalized date marker; fuzzy matching allowed
+    for name, tokens in expected:
+        try:
+            ncontent = normalize(content)
+            nperson = normalize(name)
+            person_ok = nperson in ncontent
+            token_ok = any(normalize(tok) in ncontent for tok in tokens)
+            passed = bool(person_ok and token_ok)
+            detail = f'{name} present with one of tokens {tokens}' if passed else f'{name} missing or date/age token not found'
+            checks.append({'name': f'contains_{name.lower()}', 'passed': passed, 'detail': detail})
+        except Exception as e:
+            checks.append({'name': f'contains_{name.lower()}', 'passed': False, 'detail': f'error: {e}'})
+
+    # Check 6: marker content from input should not be lost in workspace inputs
+    try:
+        note_path = ws / 'notes' / 'birthday_notes.txt'
+        note_text = note_path.read_text(encoding='utf-8') if note_path.exists() else ''
+        passed = 'BDAY-INTAKE-7F3A' in note_text and 'MARKER-AGE-CHECK' in note_text
+        checks.append({'name': 'input_marker_present', 'passed': passed, 'detail': 'required markers found in source notes' if passed else 'required markers missing in source notes'})
+    except Exception as e:
+        checks.append({'name': 'input_marker_present', 'passed': False, 'detail': f'error: {e}'})
+
+    # Check 7: file should have at least 4 bullet entries
+    try:
+        bullets = re.findall(r'^\s*-\s*\*\*.*?\*\*\s*-\s*.*$', content, flags=re.M)
+        passed = len(bullets) >= 4
+        checks.append({'name': 'minimum_entries', 'passed': passed, 'detail': f'found {len(bullets)} bullet entries' if content else 'output file empty or unreadable'})
+    except Exception as e:
+        checks.append({'name': 'minimum_entries', 'passed': False, 'detail': f'error: {e}'})
+
+    total = len(checks)
+    passed_count = sum(1 for c in checks if c.get('passed'))
+    result = {
+        'passed': passed_count == total,
+        'score': (passed_count / total) if total else 0.0,
+        'checks': checks,
+    }
+    print(json.dumps(result, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    import sys
+    main(sys.argv[1] if len(sys.argv) > 1 else '.')

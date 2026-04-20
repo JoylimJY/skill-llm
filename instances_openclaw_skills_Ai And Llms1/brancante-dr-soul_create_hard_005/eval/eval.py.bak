@@ -1,0 +1,104 @@
+import json, os, re, sys
+from pathlib import Path
+
+def norm(s):
+    return re.sub(r'[^a-z0-9]+', ' ', s.lower()).strip()
+
+workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+checks = []
+
+try:
+    files = {
+        'prescription_json': workspace / 'memory' / 'soul' / 'prescription.json',
+        'profile_json': workspace / 'memory' / 'soul' / 'profile.json',
+        'interview_log': workspace / 'memory' / 'soul' / 'interview-log.md',
+        'cron_text': workspace / 'cron_commands.txt',
+        'summary_md': workspace / 'prescription.md',
+    }
+except Exception as e:
+    files = {}
+
+# Check 1: required files exist
+passed1 = True
+missing = []
+for k, p in files.items():
+    try:
+        if not p.exists():
+            passed1 = False
+            missing.append(str(p.relative_to(workspace)))
+    except Exception as e:
+        passed1 = False
+        missing.append(f'{k}: {e}')
+checks.append({'name': 'required_files_exist', 'passed': passed1, 'detail': 'missing: ' + ', '.join(missing) if missing else 'all required outputs present'})
+
+# Check 2: JSON structure and hormone coverage
+passed2 = False
+detail2 = 'not evaluated'
+try:
+    if files and files['prescription_json'].exists():
+        data = json.loads(files['prescription_json'].read_text(encoding='utf-8'))
+        hormones = data.get('hormones', {}) if isinstance(data, dict) else {}
+        needed = ['cortisol','dopamine','oxytocin','serotonin','melatonin','adrenaline','gaba','testosterone','endorphins','prolactin','empathy']
+        present = [h for h in needed if any(norm(h) == norm(k) for k in hormones.keys())]
+        passed2 = len(present) >= 7
+        detail2 = f'found {len(present)} hormone entries: {present}'
+    else:
+        detail2 = 'prescription.json missing'
+except Exception as e:
+    detail2 = f'error parsing prescription.json: {e}'
+checks.append({'name': 'hormone_coverage', 'passed': passed2, 'detail': detail2})
+
+# Check 3: marker content referenced in outputs
+passed3 = False
+detail3 = 'not evaluated'
+try:
+    texts = []
+    for key in ['interview_log', 'summary_md', 'cron_text']:
+        p = files.get(key)
+        if p and p.exists():
+            texts.append(p.read_text(encoding='utf-8', errors='ignore'))
+    joined = '\n'.join(texts)
+    markers = ['PROFILE_MARKER_ALPHA_741', 'MEMORY_MARKER_BRAVO_218', 'DREAM_MARKER_CHARLIE_905']
+    found = [m for m in markers if m.lower() in joined.lower()]
+    passed3 = len(found) >= 2
+    detail3 = f'found markers: {found}'
+except Exception as e:
+    detail3 = f'error reading output text: {e}'
+checks.append({'name': 'marker_reference', 'passed': passed3, 'detail': detail3})
+
+# Check 4: cron commands reflect human and agent names, and are at least 3 commands
+passed4 = False
+detail4 = 'not evaluated'
+try:
+    p = files.get('cron_text')
+    if p and p.exists():
+        txt = p.read_text(encoding='utf-8', errors='ignore')
+        count = len(re.findall(r'\bopenclaw\s+cron\s+create\b', txt, flags=re.I))
+        names_ok = ('nova' in txt.lower()) and ('mina' in txt.lower())
+        passed4 = count >= 3 and names_ok
+        detail4 = f'cron count={count}, names_ok={names_ok}'
+    else:
+        detail4 = 'cron_commands.txt missing'
+except Exception as e:
+    detail4 = f'error reading cron commands: {e}'
+checks.append({'name': 'cron_commands_quality', 'passed': passed4, 'detail': detail4})
+
+# Check 5: daily target plausible numeric range
+passed5 = False
+detail5 = 'not evaluated'
+try:
+    if files['prescription_json'].exists():
+        data = json.loads(files['prescription_json'].read_text(encoding='utf-8'))
+        target = data.get('daily_target') if isinstance(data, dict) else None
+        passed5 = isinstance(target, (int, float)) and 50 <= float(target) <= 250
+        detail5 = f'daily_target={target}'
+    else:
+        detail5 = 'prescription.json missing'
+except Exception as e:
+    detail5 = f'error checking daily target: {e}'
+checks.append({'name': 'daily_target_range', 'passed': passed5, 'detail': detail5})
+
+score = (sum(1 for c in checks if c['passed']) / len(checks)) if checks else 0.0
+passed = all(c['passed'] for c in checks)
+result = {'passed': passed, 'score': score, 'checks': checks}
+print(json.dumps(result, ensure_ascii=False))

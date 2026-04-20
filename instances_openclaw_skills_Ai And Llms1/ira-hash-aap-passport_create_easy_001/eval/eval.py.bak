@@ -1,0 +1,95 @@
+from pathlib import Path
+import json
+import os
+import re
+import sys
+
+
+def safe_read(path):
+    try:
+        return Path(path).read_text(encoding='utf-8')
+    except Exception as e:
+        return None, str(e)
+
+
+def normalize(text):
+    try:
+        return re.sub(r'\s+', ' ', text.lower()).strip()
+    except Exception:
+        return ''
+
+
+def check_file_exists(workspace, filename):
+    try:
+        return Path(workspace, filename).is_file(), f'{filename} exists'
+    except Exception as e:
+        return False, f'error checking {filename}: {e}'
+
+
+def main():
+    workspace = sys.argv[1] if len(sys.argv) > 1 else '.'
+    checks = []
+
+    # Check 1: input marker exists
+    try:
+        p = Path(workspace, 'input_marker.txt')
+        ok = p.is_file()
+        detail = 'input_marker.txt present' if ok else 'input_marker.txt missing'
+        checks.append({'name': 'input marker present', 'passed': ok, 'detail': detail})
+    except Exception as e:
+        checks.append({'name': 'input marker present', 'passed': False, 'detail': f'error: {e}'})
+
+    # Check 2: server.js exists and mentions AAP server config
+    try:
+        p = Path(workspace, 'server.js')
+        if not p.is_file():
+            checks.append({'name': 'server.js created', 'passed': False, 'detail': 'server.js missing'})
+        else:
+            txt = normalize(p.read_text(encoding='utf-8'))
+            ok = ('aap-agent-server' in txt) and ('/aap' in txt) and ('requiresignature' in txt or 'requireSignature'.lower() in txt) and ('3000' in txt)
+            checks.append({'name': 'server.js created', 'passed': ok, 'detail': 'server.js contains expected AAP server setup' if ok else 'server.js content does not match expected setup'})
+    except Exception as e:
+        checks.append({'name': 'server.js created', 'passed': False, 'detail': f'error reading server.js: {e}'})
+
+    # Check 3: client.js exists and mentions AAP client config
+    try:
+        p = Path(workspace, 'client.js')
+        if not p.is_file():
+            checks.append({'name': 'client.js created', 'passed': False, 'detail': 'client.js missing'})
+        else:
+            txt = normalize(p.read_text(encoding='utf-8'))
+            ok = ('aap-agent-client' in txt) and ('ws://localhost:3000/aap' in txt) and ('verify' in txt)
+            checks.append({'name': 'client.js created', 'passed': ok, 'detail': 'client.js contains expected AAP client setup' if ok else 'client.js content does not match expected setup'})
+    except Exception as e:
+        checks.append({'name': 'client.js created', 'passed': False, 'detail': f'error reading client.js: {e}'})
+
+    # Check 4: output marker is referenced somewhere in outputs or files
+    try:
+        marker_ok = False
+        for fname in ['server.js', 'client.js', 'README.md', 'notes.txt']:
+            fp = Path(workspace, fname)
+            if fp.is_file():
+                try:
+                    txt = fp.read_text(encoding='utf-8')
+                    if 'aap' in txt.lower() and ('3000' in txt or 'ws://localhost:3000/aap' in txt):
+                        marker_ok = True
+                        break
+                except Exception:
+                    pass
+        checks.append({'name': 'references core demo details', 'passed': marker_ok, 'detail': 'found expected AAP demo references' if marker_ok else 'expected demo references not found'})
+    except Exception as e:
+        checks.append({'name': 'references core demo details', 'passed': False, 'detail': f'error during scan: {e}'})
+
+    total = len(checks)
+    passed_count = sum(1 for c in checks if c.get('passed'))
+    score = (passed_count / total) if total else 0.0
+    result = {'passed': passed_count == total, 'score': score, 'checks': checks}
+    print(json.dumps(result, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except Exception:
+        # Absolute fallback to avoid traceback
+        print(json.dumps({'passed': False, 'score': 0.0, 'checks': [{'name': 'fatal error', 'passed': False, 'detail': 'unexpected evaluator failure'}]}, ensure_ascii=False))

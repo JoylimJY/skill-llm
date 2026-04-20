@@ -1,0 +1,75 @@
+import json
+import os
+from pathlib import Path
+
+workspace = Path(__import__('sys').argv[1])
+checks = []
+
+try:
+    target = workspace / 'memory' / 'soul' / 'prescription.json'
+    if not target.exists():
+        checks.append({'name': 'prescription_exists', 'passed': False, 'detail': 'memory/soul/prescription.json is missing'})
+    else:
+        checks.append({'name': 'prescription_exists', 'passed': True, 'detail': 'prescription file exists'})
+except Exception as e:
+    checks.append({'name': 'prescription_exists', 'passed': False, 'detail': f'error checking file existence: {e}'})
+
+prescription = None
+try:
+    if (workspace / 'memory' / 'soul' / 'prescription.json').exists():
+        with open(workspace / 'memory' / 'soul' / 'prescription.json', 'r', encoding='utf-8') as f:
+            prescription = json.load(f)
+        checks.append({'name': 'valid_json', 'passed': True, 'detail': 'prescription is valid JSON'})
+    else:
+        checks.append({'name': 'valid_json', 'passed': False, 'detail': 'cannot parse missing prescription'})
+except Exception as e:
+    checks.append({'name': 'valid_json', 'passed': False, 'detail': f'failed to parse JSON: {e}'})
+
+try:
+    if isinstance(prescription, dict):
+        agent_name = str(prescription.get('agent_name', '')).lower()
+        human_name = str(prescription.get('human_name', '')).lower()
+        hormones = prescription.get('hormones', {})
+        
+        if 'aster' in agent_name and 'mina' in human_name:
+            checks.append({'name': 'names_present', 'passed': True, 'detail': 'agent and human names are present'})
+        else:
+            checks.append({'name': 'names_present', 'passed': False, 'detail': f'expected names Aster and Mina, got agent={prescription.get("agent_name")!r}, human={prescription.get("human_name")!r}'})
+        
+        # Accept hormones as either list or dict
+        if isinstance(hormones, list) and len(hormones) == 11:
+            checks.append({'name': 'all_hormones', 'passed': True, 'detail': 'contains 11 hormones'})
+        elif isinstance(hormones, dict) and len(hormones) == 11:
+            checks.append({'name': 'all_hormones', 'passed': True, 'detail': 'contains 11 hormones'})
+        else:
+            checks.append({'name': 'all_hormones', 'passed': False, 'detail': f'expected 11 hormones, got {len(hormones) if isinstance(hormones, (list, dict)) else "non-list/dict"}'})
+        
+        daily_target = prescription.get('daily_point_target')
+        if isinstance(daily_target, (int, float)) and daily_target > 0:
+            checks.append({'name': 'daily_target_positive', 'passed': True, 'detail': f'daily target is {daily_target}'})
+        else:
+            checks.append({'name': 'daily_target_positive', 'passed': False, 'detail': f'invalid daily target: {daily_target!r}'})
+        
+        # Check for at least one marker from the inputs (interview marker is the primary one)
+        marker_text = json.dumps(prescription).lower()
+        has_interview_marker = 'interview_marker_alpha_4821' in marker_text
+        has_journal_marker = 'journal_marker_9001' in marker_text
+        
+        if has_interview_marker or has_journal_marker:
+            checks.append({'name': 'marker_reflection', 'passed': True, 'detail': 'prescription reflects interview/journal markers'})
+        else:
+            checks.append({'name': 'marker_reflection', 'passed': False, 'detail': 'missing expected marker references from inputs'})
+    else:
+        for name in ['names_present', 'all_hormones', 'daily_target_positive', 'marker_reflection']:
+            checks.append({'name': name, 'passed': False, 'detail': 'prescription is not a JSON object'})
+except Exception as e:
+    checks.append({'name': 'content_checks', 'passed': False, 'detail': f'error during content validation: {e}'})
+
+try:
+    total = len(checks)
+    passed = sum(1 for c in checks if c.get('passed'))
+    score = passed / total if total else 0.0
+    result = {'passed': passed == total and total > 0, 'score': score, 'checks': checks}
+    print(json.dumps(result, ensure_ascii=False))
+except Exception as e:
+    print(json.dumps({'passed': False, 'score': 0.0, 'checks': [{'name': 'finalize', 'passed': False, 'detail': f'failed to finalize result: {e}'}]}, ensure_ascii=False))

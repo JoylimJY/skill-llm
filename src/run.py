@@ -10,6 +10,7 @@ from .synthesizer import synthesize_skill, load_skill, write_instance_dir
 from .sandbox import Sandbox, BuildFailedError
 from .evaluator import evaluate, evaluate_in_container
 from .filter import filter_instance
+from .filter_terminus import filter_instance_terminus
 from .schema import InstanceSpec, RunSummary
 
 
@@ -225,6 +226,77 @@ def cmd_filter(args):
     print(f"Total filtered: {total}  Kept: {kept}  Too easy: {too_easy}  Unsolvable: {unsolvable}  Skipped: {skipped}")
 
 
+def cmd_filter_terminus(args):
+    """Run pass@k filtering using Terminus-2 style agent."""
+    output_dir = Path(args.output_dir)
+
+    # Collect instances to filter
+    if args.instance:
+        instance_dirs = [Path(args.instance)]
+    else:
+        # Filter all built instances in output_dir
+        instance_dirs = sorted(
+            d for d in output_dir.iterdir()
+            if d.is_dir() and (d / "task.json").exists()
+        )
+
+    kept = 0
+    too_easy = 0
+    unsolvable = 0
+    skipped = 0
+
+    for inst_dir in instance_dirs:
+        task_json_path = inst_dir / "task.json"
+        task_data = json.loads(task_json_path.read_text())
+
+        # Only filter successfully built instances
+        if task_data.get("build_status") != "success":
+            print(f"SKIP (not built): {inst_dir.name}")
+            skipped += 1
+            continue
+
+        # Skip already-filtered instances unless --force
+        if task_data.get("filter_status") and not args.force:
+            verdict = task_data["filter_status"]
+            print(f"SKIP (already filtered: {verdict}): {inst_dir.name}")
+            if verdict == "kept":
+                kept += 1
+            elif verdict == "too_easy":
+                too_easy += 1
+            else:
+                unsolvable += 1
+            continue
+
+        print(f"\n=== Filtering (Terminus-2): {inst_dir.name} ===")
+        try:
+            result = filter_instance_terminus(
+                instance_dir=str(inst_dir),
+                provider=args.provider,
+                model=args.model,
+                api_base=args.api_base,
+                api_key=args.api_key or "",
+                num_trials=args.num_trials,
+                concurrency=args.concurrency,
+                max_iterations=args.max_iterations,
+                verbose=True,
+            )
+
+            if result.verdict == "kept":
+                kept += 1
+            elif result.verdict == "too_easy":
+                too_easy += 1
+            else:
+                unsolvable += 1
+
+        except Exception as e:
+            print(f"  ERROR: {e}")
+            skipped += 1
+
+    total = kept + too_easy + unsolvable
+    print(f"\n=== Filter Summary (Terminus-2) ===")
+    print(f"Total filtered: {total}  Kept: {kept}  Too easy: {too_easy}  Unsolvable: {unsolvable}  Skipped: {skipped}")
+
+
 def cmd_all(args):
     """Full pipeline: synthesize + build + filter + evaluate all instances."""
     run_dir = resolve_run_dir(args)
@@ -375,6 +447,19 @@ def main():
     p_filter.add_argument("--concurrency", type=int, default=4, help="Number of parallel agent trials")
     p_filter.add_argument("--force", action="store_true", help="Re-filter already filtered instances")
 
+    # filter_terminus
+    p_filter_terminus = subparsers.add_parser("filter_terminus", help="Filter tasks using Terminus-2 style agent")
+    p_filter_terminus.add_argument("--instance", help="Path to a single instance directory (omit for batch mode)")
+    p_filter_terminus.add_argument("--output-dir", default="instances", help="Directory containing instances (batch mode)")
+    p_filter_terminus.add_argument("--provider", choices=["openai", "claude"], default="openai", help="LLM provider")
+    p_filter_terminus.add_argument("--model", required=True, help="Model name for agent trials")
+    p_filter_terminus.add_argument("--api-base", help="API base URL (for OpenAI-compatible APIs)")
+    p_filter_terminus.add_argument("--api-key", help="API key (or set ANTHROPIC_AUTH_TOKEN for Claude)")
+    p_filter_terminus.add_argument("--num-trials", type=int, default=16, help="Number of agent trials per instance")
+    p_filter_terminus.add_argument("--concurrency", type=int, default=4, help="Number of parallel agent trials")
+    p_filter_terminus.add_argument("--max-iterations", type=int, default=30, help="Max iterations per trial")
+    p_filter_terminus.add_argument("--force", action="store_true", help="Re-filter already filtered instances")
+
     # all
     p_all = subparsers.add_parser("all", help="Full pipeline: synthesize + build + filter + evaluate")
     p_all.add_argument("--skill-dir", required=True, help="Path to skill directory")
@@ -395,6 +480,7 @@ def main():
         "destroy": cmd_destroy,
         "cleanup": cmd_cleanup,
         "filter": cmd_filter,
+        "filter_terminus": cmd_filter_terminus,
         "all": cmd_all,
     }
     commands[args.command](args)

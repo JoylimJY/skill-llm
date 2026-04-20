@@ -1,0 +1,45 @@
+import json
+import os
+from pathlib import Path
+
+checks = []
+workspace = Path(__import__('sys').argv[1]) if len(__import__('sys').argv) > 1 else Path('.')
+
+
+def add_check(name, passed, detail):
+    checks.append({'name': name, 'passed': bool(passed), 'detail': str(detail)})
+
+try:
+    out_file = workspace / 'output.txt'
+    if not out_file.exists():
+        add_check('output_exists', False, 'output.txt is missing')
+    else:
+        try:
+            text = out_file.read_text(encoding='utf-8', errors='replace')
+            lowered = ' '.join(text.lower().split())
+            ok = ('clauditor' in lowered) or ('audit' in lowered)
+            add_check('output_mentions_audit', ok, 'found audit-related wording' if ok else 'expected audit-related wording')
+        except Exception as e:
+            add_check('output_readable', False, f'could not read output.txt: {e}')
+
+    try:
+        marker = (workspace / 'input' / 'expected_marker.txt').read_text(encoding='utf-8', errors='replace').strip()
+        events = (workspace / 'input' / 'events.log').read_text(encoding='utf-8', errors='replace')
+        ok = marker.lower() in events.lower()
+        add_check('input_marker_present', ok, 'marker found in events.log' if ok else 'marker missing from events.log')
+    except Exception as e:
+        add_check('input_marker_present', False, f'failed to inspect inputs: {e}')
+
+    try:
+        tmpl = json.loads((workspace / 'input' / 'summary_template.json').read_text(encoding='utf-8', errors='replace'))
+        ok = isinstance(tmpl, dict) and 'marker' in tmpl and 'title' in tmpl
+        add_check('template_structure', ok, 'template has required keys' if ok else 'template missing required keys')
+    except Exception as e:
+        add_check('template_structure', False, f'could not parse summary_template.json: {e}')
+except Exception as e:
+    add_check('eval_internal_error', False, f'unexpected error: {e}')
+
+passed_count = sum(1 for c in checks if c['passed'])
+score = passed_count / len(checks) if checks else 0.0
+result = {'passed': passed_count == len(checks) and len(checks) > 0, 'score': score, 'checks': checks}
+print(json.dumps(result))

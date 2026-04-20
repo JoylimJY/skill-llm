@@ -1,0 +1,86 @@
+import json
+import os
+from pathlib import Path
+
+workspace = Path(__import__('sys').argv[1])
+checks = []
+
+def add_check(name, passed, detail):
+    checks.append({'name': name, 'passed': bool(passed), 'detail': detail})
+
+# Check 1: palette.json exists and is valid JSON with expected structure
+try:
+    palette_path = workspace / 'palette.json'
+    if not palette_path.exists():
+        add_check('palette_json_exists', False, 'palette.json is missing')
+    else:
+        try:
+            data = json.loads(palette_path.read_text(encoding='utf-8'))
+            if isinstance(data, dict) and 'palette' in data and isinstance(data['palette'], list) and len(data['palette']) == 5:
+                add_check('palette_json_exists', True, 'palette.json exists and contains a 5-color palette')
+            else:
+                add_check('palette_json_exists', False, 'palette.json is present but does not contain a 5-item palette list')
+        except Exception as e:
+            add_check('palette_json_exists', False, f'palette.json could not be parsed as JSON: {e}')
+except Exception as e:
+    add_check('palette_json_exists', False, f'Unexpected error while checking palette.json: {e}')
+
+# Check 2: first color is locked near the requested brand blue
+try:
+    palette_path = workspace / 'palette.json'
+    if not palette_path.exists():
+        add_check('locked_color', False, 'palette.json is missing')
+    else:
+        try:
+            data = json.loads(palette_path.read_text(encoding='utf-8'))
+            first = None
+            if isinstance(data, dict):
+                palette = data.get('palette', [])
+                if isinstance(palette, list) and palette:
+                    first = palette[0]
+            ok = False
+            detail = 'first color not found'
+            if isinstance(first, list) and len(first) == 3:
+                target = [0, 122, 255]
+                diffs = [abs(int(first[i]) - target[i]) for i in range(3)]
+                ok = sum(diffs) <= 30
+                detail = f'first color={first}, target={target}, diffs={diffs}'
+            add_check('locked_color', ok, detail)
+        except Exception as e:
+            add_check('locked_color', False, f'Could not inspect palette colors: {e}')
+except Exception as e:
+    add_check('locked_color', False, f'Unexpected error while checking locked color: {e}')
+
+# Check 3: summary file exists and mentions both hex and RGB
+try:
+    summary_path = workspace / 'palette_summary.md'
+    if not summary_path.exists():
+        add_check('summary_file', False, 'palette_summary.md is missing')
+    else:
+        try:
+            text = summary_path.read_text(encoding='utf-8').lower()
+            has_hex = 'hex' in text or '#' in text
+            has_rgb = 'rgb' in text
+            add_check('summary_file', has_hex and has_rgb, f'contains_hex={has_hex}, contains_rgb={has_rgb}')
+        except Exception as e:
+            add_check('summary_file', False, f'Could not read summary file: {e}')
+except Exception as e:
+    add_check('summary_file', False, f'Unexpected error while checking summary file: {e}')
+
+# Check 4: marker input file exists
+try:
+    marker_path = workspace / 'task_marker.txt'
+    if not marker_path.exists():
+        add_check('marker_file', False, 'task_marker.txt is missing')
+    else:
+        try:
+            text = marker_path.read_text(encoding='utf-8')
+            add_check('marker_file', 'COLORMIND_TASK_MARKER' in text, 'marker content found' if 'COLORMIND_TASK_MARKER' in text else 'marker content missing')
+        except Exception as e:
+            add_check('marker_file', False, f'Could not read marker file: {e}')
+except Exception as e:
+    add_check('marker_file', False, f'Unexpected error while checking marker file: {e}')
+
+passed = all(c['passed'] for c in checks) if checks else False
+score = (sum(1 for c in checks if c['passed']) / len(checks)) if checks else 0.0
+print(json.dumps({'passed': passed, 'score': score, 'checks': checks}))

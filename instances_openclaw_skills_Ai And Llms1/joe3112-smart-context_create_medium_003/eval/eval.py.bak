@@ -1,0 +1,99 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+
+def safe_read(path):
+    try:
+        return Path(path).read_text(encoding='utf-8')
+    except Exception as e:
+        return None, str(e)
+
+
+def norm(s):
+    if s is None:
+        return ''
+    return re.sub(r'[^a-z0-9]+', ' ', s.lower()).strip()
+
+
+def fuzzy_contains(text, phrases):
+    t = norm(text)
+    return all(norm(p) in t for p in phrases)
+
+
+def main():
+    workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+    checks = []
+
+    # Check 1: output file exists and is non-empty
+    try:
+        out_txt = workspace / 'output' / 'summary.txt'
+        if out_txt.exists():
+            content = out_txt.read_text(encoding='utf-8')
+            passed = len(content.strip()) > 0
+            detail = 'summary.txt exists and is non-empty' if passed else 'summary.txt is empty'
+        else:
+            passed = False
+            detail = 'summary.txt is missing'
+    except Exception as e:
+        passed = False
+        detail = f'error reading summary.txt: {e}'
+    checks.append({'name': 'summary_txt_exists', 'passed': passed, 'detail': detail})
+
+    # Check 2: summary mentions key files and duplication guidance
+    try:
+        content = (workspace / 'output' / 'summary.txt').read_text(encoding='utf-8') if (workspace / 'output' / 'summary.txt').exists() else ''
+        phrases = ['readme', 'spec', 'duplicate', 'token', 'first']
+        passed = fuzzy_contains(content, phrases)
+        detail = 'mentions README/spec/duplicate/token/first' if passed else 'missing one or more key concepts'
+    except Exception as e:
+        passed = False
+        detail = f'could not evaluate summary text: {e}'
+    checks.append({'name': 'summary_content', 'passed': passed, 'detail': detail})
+
+    # Check 3: JSON output exists and has expected keys / values
+    try:
+        out_json = workspace / 'output' / 'summary.json'
+        if not out_json.exists():
+            passed = False
+            detail = 'summary.json is missing'
+        else:
+            data = json.loads(out_json.read_text(encoding='utf-8'))
+            keys = set(data.keys())
+            required = {'important_files', 'redundant_or_duplicate_info', 'read_first_recommendation'}
+            passed = required.issubset(keys)
+            if passed:
+                imp = ' '.join(map(str, data.get('important_files', [])))
+                dup = ' '.join(map(str, data.get('redundant_or_duplicate_info', [])))
+                rec = str(data.get('read_first_recommendation', ''))
+                passed = fuzzy_contains(imp, ['readme', 'spec']) and fuzzy_contains(dup, ['duplicate', 'repeat']) and 'read' in norm(rec)
+                detail = 'summary.json contains required fields with expected high-level content' if passed else 'summary.json content did not match expectations'
+            else:
+                detail = f'missing required keys: {sorted(required - keys)}'
+    except Exception as e:
+        passed = False
+        detail = f'error parsing summary.json: {e}'
+    checks.append({'name': 'summary_json_schema', 'passed': passed, 'detail': detail})
+
+    # Check 4: JSON mirrors text with marker of concision
+    try:
+        txt = (workspace / 'output' / 'summary.txt').read_text(encoding='utf-8') if (workspace / 'output' / 'summary.txt').exists() else ''
+        js = json.loads((workspace / 'output' / 'summary.json').read_text(encoding='utf-8')) if (workspace / 'output' / 'summary.json').exists() else {}
+        txt_words = len(norm(txt).split())
+        js_ok = isinstance(js, dict) and bool(js)
+        passed = js_ok and txt_words > 0 and txt_words < 250
+        detail = f'text length={txt_words} words; json present={js_ok}' if passed else 'summary too long or json missing'
+    except Exception as e:
+        passed = False
+        detail = f'error comparing outputs: {e}'
+    checks.append({'name': 'concise_output', 'passed': passed, 'detail': detail})
+
+    score = sum(1 for c in checks if c['passed']) / len(checks) if checks else 0.0
+    result = {'passed': all(c['passed'] for c in checks), 'score': score, 'checks': checks}
+    print(json.dumps(result))
+
+
+if __name__ == '__main__':
+    main()

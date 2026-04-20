@@ -1,0 +1,69 @@
+import json
+import os
+from pathlib import Path
+
+workspace = Path(__import__('sys').argv[1])
+checks = []
+
+def add_check(name, passed, detail):
+    checks.append({'name': name, 'passed': bool(passed), 'detail': detail})
+
+# Check 1: input marker exists
+try:
+    marker_path = workspace / 'inputs' / 'marker.json'
+    if marker_path.exists():
+        data = json.loads(marker_path.read_text(encoding='utf-8'))
+        marker_ok = 'CLAWFACE_DETERMINISTIC_MARKER_7F3A' in str(data)
+        add_check('input_marker_present', marker_ok, 'Marker file found and marker verified.' if marker_ok else 'Marker file found but marker content did not match.')
+    else:
+        add_check('input_marker_present', False, 'Missing inputs/marker.json.')
+except Exception as e:
+    add_check('input_marker_present', False, f'Error reading marker file: {e}')
+
+# Check 2: avatar state file exists
+try:
+    state_path = Path.home() / '.clawface' / 'avatar_state.json'
+    if state_path.exists():
+        add_check('avatar_state_exists', True, 'Found ~/.clawface/avatar_state.json.')
+    else:
+        add_check('avatar_state_exists', False, 'Missing ~/.clawface/avatar_state.json.')
+except Exception as e:
+    add_check('avatar_state_exists', False, f'Error checking avatar state file: {e}')
+
+# Check 3: state file content is plausible and contains required marker/message hints
+try:
+    state_path = Path.home() / '.clawface' / 'avatar_state.json'
+    if not state_path.exists():
+        add_check('avatar_state_content', False, 'State file missing, cannot inspect content.')
+    else:
+        txt = state_path.read_text(encoding='utf-8', errors='replace')
+        lower = txt.lower()
+        required_terms = ['thinking', 'speaking', 'idle']
+        found = sum(1 for term in required_terms if term in lower)
+        marker_found = 'clawface_deterministic_marker_7f3a'.lower() in lower or 'clawface' in lower
+        passed = found >= 2 and marker_found
+        detail = f'Found {found}/3 expected flow terms; marker match={marker_found}.'
+        add_check('avatar_state_content', passed, detail)
+except Exception as e:
+    add_check('avatar_state_content', False, f'Error reading avatar state content: {e}')
+
+# Check 4: output should reflect success/confetti or similar celebratory state
+try:
+    state_path = Path.home() / '.clawface' / 'avatar_state.json'
+    if not state_path.exists():
+        add_check('celebration_state', False, 'State file missing, cannot verify celebration state.')
+    else:
+        txt = state_path.read_text(encoding='utf-8', errors='replace').lower()
+        celebratory = any(term in txt for term in ['confetti', 'success', 'happy', 'excited'])
+        passed = celebratory
+        add_check('celebration_state', passed, 'Celebratory state detected.' if passed else 'No celebratory state terms detected.')
+except Exception as e:
+    add_check('celebration_state', False, f'Error checking celebratory state: {e}')
+
+score = (sum(1 for c in checks if c['passed']) / len(checks)) if checks else 0.0
+result = {
+    'passed': all(c['passed'] for c in checks),
+    'score': score,
+    'checks': checks,
+}
+print(json.dumps(result, ensure_ascii=False))

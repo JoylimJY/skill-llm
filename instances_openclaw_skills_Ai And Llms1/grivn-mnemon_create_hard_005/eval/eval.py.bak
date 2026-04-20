@@ -1,0 +1,86 @@
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path.cwd()
+checks = []
+
+def add_check(name, passed, detail):
+    checks.append({"name": name, "passed": bool(passed), "detail": str(detail)})
+
+try:
+    summary_path = workspace / "mnemon_summary.md"
+    if summary_path.exists():
+        summary_text = summary_path.read_text(encoding="utf-8", errors="replace")
+    else:
+        summary_text = ""
+    normalized = re.sub(r"[^a-z0-9]+", " ", summary_text.lower()).strip()
+
+    add_check(
+        "summary_exists",
+        summary_path.exists(),
+        "mnemon_summary.md exists" if summary_path.exists() else "mnemon_summary.md is missing",
+    )
+
+    markers_ok = all(
+        m.lower().replace("_", " ") in normalized
+        for m in ["project lattice", "lattice echo", "read only staging api", "markdown archive decision"]
+    )
+    add_check(
+        "summary_mentions_key_markers",
+        markers_ok,
+        "Summary mentions the expected project, codename, API constraint, and markdown decision",
+    )
+except Exception as e:
+    add_check("summary_readability", False, f"Could not read or analyze summary: {e}")
+
+store_info = ""
+try:
+    result = subprocess.run([
+        "mnemon", "status"
+    ], cwd=str(workspace), capture_output=True, text=True, timeout=30)
+    store_info = (result.stdout or "") + "\n" + (result.stderr or "")
+    add_check(
+        "mnemon_command_available",
+        result.returncode == 0,
+        store_info.strip()[:400] if store_info.strip() else "mnemon status command failed or produced no output",
+    )
+except Exception as e:
+    add_check("mnemon_status_run", False, f"Failed to run mnemon status: {e}")
+
+# Check that at least two memory-related outputs appear somewhere in status/log if available.
+try:
+    text = store_info.lower()
+    hints = ["memory", "store", "entries", "facts", "insights"]
+    hint_count = sum(1 for h in hints if h in text)
+    add_check(
+        "status_contains_memory_hints",
+        hint_count >= 2,
+        f"Found {hint_count} generic memory-related hints in mnemon status output",
+    )
+except Exception as e:
+    add_check("status_analysis", False, f"Could not analyze mnemon status output: {e}")
+
+# Objective output checks that do not assume exact IDs.
+try:
+    # Require at least one markdown heading and one bullet list in summary.
+    has_heading = bool(re.search(r"^#+\s+", summary_text, flags=re.M))
+    has_bullets = bool(re.search(r"^\s*[-*]\s+", summary_text, flags=re.M))
+    add_check(
+        "summary_structure",
+        has_heading and has_bullets,
+        "Summary uses markdown headings and bullet points" if has_heading and has_bullets else "Summary is missing headings or bullets",
+    )
+except Exception as e:
+    add_check("summary_structure", False, f"Could not inspect summary structure: {e}")
+
+# Score logic required by prompt.
+passed_count = sum(1 for c in checks if c["passed"])
+total = len(checks) if checks else 1
+score = passed_count / total
+passed = passed_count == total
+
+print(json.dumps({"passed": passed, "score": score, "checks": checks}, ensure_ascii=False))

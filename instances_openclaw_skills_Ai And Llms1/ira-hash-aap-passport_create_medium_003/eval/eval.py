@@ -1,0 +1,95 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+
+def safe_read_text(path):
+    try:
+        return Path(path).read_text(encoding='utf-8'), None
+    except Exception as e:
+        return None, str(e)
+
+
+def normalize(s):
+    try:
+        return re.sub(r'\s+', ' ', str(s)).strip().lower()
+    except Exception:
+        return ''
+
+
+def main():
+    checks = []
+    workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(".")
+
+    # Check 1: report.txt exists and contains marker
+    try:
+        report_path = workspace / 'report.txt'
+        if not report_path.exists():
+            checks.append({'name': 'report_exists', 'passed': False, 'detail': 'report.txt is missing'})
+        else:
+            text, err = safe_read_text(report_path)
+            if err:
+                checks.append({'name': 'report_exists', 'passed': False, 'detail': f'Could not read report.txt: {err}'})
+            else:
+                marker_ok = 'MARKER::AAP::GREEN::7x6'.lower() in normalize(text)
+                checks.append({'name': 'report_exists', 'passed': marker_ok, 'detail': 'Marker present in report.txt' if marker_ok else 'Marker missing from report.txt'})
+    except Exception as e:
+        checks.append({'name': 'report_exists', 'passed': False, 'detail': f'Unexpected error: {e}'})
+
+    # Check 2: summary.json exists and is valid JSON with required fields
+    try:
+        summary_path = workspace / 'summary.json'
+        if not summary_path.exists():
+            checks.append({'name': 'summary_json', 'passed': False, 'detail': 'summary.json is missing'})
+        else:
+            raw, err = safe_read_text(summary_path)
+            if err:
+                checks.append({'name': 'summary_json', 'passed': False, 'detail': f'Could not read summary.json: {err}'})
+            else:
+                try:
+                    data = json.loads(raw)
+                    passed = isinstance(data, dict) and 'total_records' in data and 'successful_verifications' in data and 'failed_verifications' in data
+                    checks.append({'name': 'summary_json', 'passed': passed, 'detail': 'summary.json has required fields' if passed else 'summary.json missing required fields'})
+                except Exception as e:
+                    checks.append({'name': 'summary_json', 'passed': False, 'detail': f'Invalid JSON: {e}'})
+    except Exception as e:
+        checks.append({'name': 'summary_json', 'passed': False, 'detail': f'Unexpected error: {e}'})
+
+    # Check 3: counts match input data
+    try:
+        input_path = workspace / 'handshakes.json'
+        out_path = workspace / 'summary.json'
+        if not input_path.exists() or not out_path.exists():
+            checks.append({'name': 'counts_match', 'passed': False, 'detail': 'Missing input or output file'})
+        else:
+            try:
+                input_data = json.loads(input_path.read_text(encoding='utf-8'))
+                out_data = json.loads(out_path.read_text(encoding='utf-8'))
+                records = input_data.get('records', []) if isinstance(input_data, dict) else []
+                total = len(records)
+                passed_count = sum(1 for r in records if isinstance(r, dict) and bool(r.get('verified')))
+                failed_count = total - passed_count
+                passed = (
+                    isinstance(out_data, dict)
+                    and out_data.get('total_records') == total
+                    and out_data.get('successful_verifications') == passed_count
+                    and out_data.get('failed_verifications') == failed_count
+                )
+                detail = f"expected total={total}, passed={passed_count}, failed={failed_count}"
+                checks.append({'name': 'counts_match', 'passed': passed, 'detail': detail})
+            except Exception as e:
+                checks.append({'name': 'counts_match', 'passed': False, 'detail': f'Error validating counts: {e}'})
+    except Exception as e:
+        checks.append({'name': 'counts_match', 'passed': False, 'detail': f'Unexpected error: {e}'})
+
+    total_checks = len(checks)
+    passed_checks = sum(1 for c in checks if c.get('passed'))
+    score = (passed_checks / total_checks) if total_checks else 0.0
+    result = {'passed': passed_checks == total_checks and total_checks > 0, 'score': score, 'checks': checks}
+    print(json.dumps(result))
+
+
+if __name__ == '__main__':
+    main()

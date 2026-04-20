@@ -1,0 +1,90 @@
+import json
+import os
+from pathlib import Path
+
+
+def safe_read_text(path: Path):
+    try:
+        return path.read_text(encoding='utf-8')
+    except Exception as e:
+        return None, str(e)
+
+
+def normalize(s: str) -> str:
+    return ''.join(ch.lower() for ch in s if ch.isalnum() or ch.isspace())
+
+
+def main():
+    import sys
+    workspace = Path(sys.argv[1])
+    checks = []
+
+    marker_path = workspace / 'markers' / 'task_marker.json'
+    try:
+        marker = json.loads(marker_path.read_text(encoding='utf-8'))
+        required_limit = float(marker.get('required_limit', 25.0))
+    except Exception as e:
+        marker = {}
+        required_limit = 25.0
+        checks.append({
+            'name': 'marker file readable',
+            'passed': False,
+            'detail': f'Could not read marker file: {e}'
+        })
+
+    limit_file = workspace / '.tokenguard' / 'limit.json'
+    session_file = workspace / '.tokenguard' / 'session.json'
+
+    # Check 1: limit file exists and contains a usable limit value
+    try:
+        if not limit_file.exists():
+            checks.append({'name': 'limit file exists', 'passed': False, 'detail': 'Missing .tokenguard/limit.json'})
+        else:
+            data = json.loads(limit_file.read_text(encoding='utf-8'))
+            text = normalize(json.dumps(data))
+            ok = False
+            if isinstance(data, dict):
+                for key in ['limit', 'default_limit', 'spending_limit', 'amount']:
+                    if key in data:
+                        try:
+                            val = float(data[key])
+                            if abs(val - required_limit) < 0.01:
+                                ok = True
+                                break
+                        except Exception:
+                            pass
+            if not ok:
+                ok = (str(required_limit).rstrip('0').rstrip('.') in text) or ('25' in text)
+            checks.append({'name': 'limit file contains $25 value', 'passed': ok, 'detail': f'Found: {data if isinstance(data, dict) else "unparseable"}'})
+    except Exception as e:
+        checks.append({'name': 'limit file contains $25 value', 'passed': False, 'detail': f'Error reading/parsing limit file: {e}'})
+
+    # Check 2: session file exists and is clean/empty-ish
+    try:
+        if not session_file.exists():
+            checks.append({'name': 'session file exists', 'passed': False, 'detail': 'Missing .tokenguard/session.json'})
+        else:
+            data = json.loads(session_file.read_text(encoding='utf-8'))
+            ok = False
+            if isinstance(data, dict):
+                spent = data.get('spent', data.get('total_spent', 0))
+                entries = data.get('entries', data.get('logs', []))
+                try:
+                    spent_ok = abs(float(spent)) < 1e-9
+                except Exception:
+                    spent_ok = False
+                entries_ok = isinstance(entries, list) and len(entries) == 0
+                ok = spent_ok and entries_ok
+            checks.append({'name': 'session starts clean', 'passed': ok, 'detail': f'Found: {data if isinstance(data, dict) else "unparseable"}'})
+    except Exception as e:
+        checks.append({'name': 'session starts clean', 'passed': False, 'detail': f'Error reading/parsing session file: {e}'})
+
+    total = len(checks)
+    passed = sum(1 for c in checks if c['passed'])
+    score = passed / total if total else 0.0
+    result = {'passed': passed == total and total > 0, 'score': score, 'checks': checks}
+    print(json.dumps(result))
+
+
+if __name__ == '__main__':
+    main()

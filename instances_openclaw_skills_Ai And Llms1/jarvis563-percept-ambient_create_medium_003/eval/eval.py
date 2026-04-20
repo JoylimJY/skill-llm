@@ -1,0 +1,103 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+
+def normalize(text):
+    try:
+        text = text.lower()
+        text = re.sub(r'[^a-z0-9]+', ' ', text)
+        return re.sub(r'\s+', ' ', text).strip()
+    except Exception:
+        return ''
+
+
+def find_fuzzy(text, needle):
+    try:
+        return normalize(needle) in normalize(text)
+    except Exception:
+        return False
+
+
+def safe_read(path):
+    try:
+        content = Path(path).read_text(encoding='utf-8')
+        return content, None
+    except Exception as e:
+        return None, str(e)
+
+
+def main():
+    checks = []
+    workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(".")
+    bundle = workspace / 'percept_bundle'
+    entities_path = bundle / 'entities.json'
+    summary_path = bundle / 'summary.txt'
+
+    try:
+        exists_bundle = bundle.exists() and bundle.is_dir()
+        checks.append({'name': 'bundle_directory_exists', 'passed': exists_bundle, 'detail': 'percept_bundle directory present' if exists_bundle else 'percept_bundle directory missing'})
+    except Exception as e:
+        checks.append({'name': 'bundle_directory_exists', 'passed': False, 'detail': f'error checking bundle directory: {e}'})
+
+    try:
+        if entities_path.exists():
+            raw, err = safe_read(entities_path)
+            if raw is None:
+                checks.append({'name': 'entities_json_readable', 'passed': False, 'detail': f'could not read entities.json: {err}'})
+            else:
+                try:
+                    data = json.loads(raw)
+                    ok_type = isinstance(data, dict)
+                    checks.append({'name': 'entities_json_parseable', 'passed': ok_type, 'detail': 'entities.json parsed as object' if ok_type else 'entities.json is not a JSON object'})
+                    if ok_type:
+                        people = data.get('people', [])
+                        projects = data.get('projects', [])
+                        decisions = data.get('decisions', [])
+                        people_names = normalize(' '.join(str(x) for x in people))
+                        project_text = normalize(' '.join(str(x) for x in projects))
+                        decision_text = normalize(' '.join(str(x) for x in decisions))
+                        checks.append({'name': 'entities_include_people', 'passed': all(find_fuzzy(people_names, n) for n in ['Alice', 'Bob', 'Carol', 'Dan']), 'detail': 'expected people names detected' if all(find_fuzzy(people_names, n) for n in ['Alice', 'Bob', 'Carol', 'Dan']) else 'missing one or more expected people'})
+                        checks.append({'name': 'entities_include_projects', 'passed': all(find_fuzzy(project_text, n) for n in ['Nimbus', 'Orion', 'Atlas']), 'detail': 'expected project references detected' if all(find_fuzzy(project_text, n) for n in ['Nimbus', 'Orion', 'Atlas']) else 'missing one or more expected project references'})
+                        checks.append({'name': 'markers_preserved', 'passed': all(find_fuzzy(decision_text, n) for n in ['MARKER-ALPHA-4817', 'MARKER-BETA-9021', 'MARKER-GAMMA-1144']), 'detail': 'all input markers preserved' if all(find_fuzzy(decision_text, n) for n in ['MARKER-ALPHA-4817', 'MARKER-BETA-9021', 'MARKER-GAMMA-1144']) else 'one or more markers missing'})
+                except Exception as e:
+                    checks.append({'name': 'entities_json_parseable', 'passed': False, 'detail': f'JSON parse error: {e}'})
+        else:
+            checks.append({'name': 'entities_json_readable', 'passed': False, 'detail': 'entities.json missing'})
+            checks.append({'name': 'entities_json_parseable', 'passed': False, 'detail': 'entities.json missing'})
+            checks.append({'name': 'entities_include_people', 'passed': False, 'detail': 'cannot inspect missing entities.json'})
+            checks.append({'name': 'entities_include_projects', 'passed': False, 'detail': 'cannot inspect missing entities.json'})
+            checks.append({'name': 'markers_preserved', 'passed': False, 'detail': 'cannot inspect missing entities.json'})
+    except Exception as e:
+        checks.append({'name': 'entities_json_overall', 'passed': False, 'detail': f'error checking entities.json: {e}'})
+
+    try:
+        if summary_path.exists():
+            raw, err = safe_read(summary_path)
+            if raw is None:
+                checks.append({'name': 'summary_readable', 'passed': False, 'detail': f'could not read summary.txt: {err}'})
+            else:
+                lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+                checks.append({'name': 'summary_has_content', 'passed': len(lines) >= 3, 'detail': f'summary has {len(lines)} non-empty lines' if len(lines) >= 3 else 'summary missing expected content'})
+                checks.append({'name': 'summary_mentions_decisions', 'passed': all(find_fuzzy(raw, n) for n in ['Decision', 'postpone', 'keep Nimbus', 'own the prototype notes']), 'detail': 'summary includes key decision phrasing' if all(find_fuzzy(raw, n) for n in ['Decision', 'postpone', 'keep Nimbus', 'own the prototype notes']) else 'summary missing one or more decision details'})
+        else:
+            checks.append({'name': 'summary_readable', 'passed': False, 'detail': 'summary.txt missing'})
+            checks.append({'name': 'summary_has_content', 'passed': False, 'detail': 'summary.txt missing'})
+            checks.append({'name': 'summary_mentions_decisions', 'passed': False, 'detail': 'summary.txt missing'})
+    except Exception as e:
+        checks.append({'name': 'summary_overall', 'passed': False, 'detail': f'error checking summary.txt: {e}'})
+
+    total = len(checks)
+    passed = sum(1 for c in checks if c.get('passed'))
+    score = (passed / total) if total else 0.0
+    result = {'passed': passed == total and total > 0, 'score': score, 'checks': checks}
+    print(json.dumps(result))
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except Exception as e:
+        print(json.dumps({'passed': False, 'score': 0.0, 'checks': [{'name': 'fatal', 'passed': False, 'detail': str(e)}]}))

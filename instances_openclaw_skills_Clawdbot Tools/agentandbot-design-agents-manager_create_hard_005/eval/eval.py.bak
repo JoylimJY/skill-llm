@@ -1,0 +1,72 @@
+import json
+import os
+from pathlib import Path
+
+try:
+    import PyPDF2
+except Exception:
+    PyPDF2 = None
+
+workspace = Path(__import__('sys').argv[1]) if len(__import__('sys').argv) > 1 else Path('.')
+checks = []
+
+def add_check(name, passed, detail):
+    checks.append({"name": name, "passed": bool(passed), "detail": str(detail)})
+
+# 1. Required output files exist
+required_files = ['registry_report.md', 'hierarchy.pdf', 'routing_audit.json']
+for fname in required_files:
+    try:
+        exists = (workspace / fname).exists()
+        add_check(f'file_exists::{fname}', exists, 'found' if exists else 'missing')
+    except Exception as e:
+        add_check(f'file_exists::{fname}', False, f'error checking existence: {e}')
+
+# 2. Report mentions core routing facts with fuzzy matching
+try:
+    text = (workspace / 'registry_report.md').read_text(encoding='utf-8', errors='ignore') if (workspace / 'registry_report.md').exists() else ''
+    t = ' '.join(text.lower().split())
+    ok = all(k in t for k in ['main', 'ilkerkaan', 'research-1', 'dev-1', 'ops-1']) and ('can assign' in t or 'can_assign_to' in t)
+    add_check('report_content', ok, 'contains expected agent names and routing language' if ok else 'missing one or more expected routing terms')
+except Exception as e:
+    add_check('report_content', False, f'error reading report: {e}')
+
+# 3. JSON audit is parseable and contains approval/handshake mention
+try:
+    raw = (workspace / 'routing_audit.json').read_text(encoding='utf-8', errors='ignore') if (workspace / 'routing_audit.json').exists() else ''
+    data = json.loads(raw)
+    audit_text = json.dumps(data, ensure_ascii=False).lower()
+    ok = isinstance(data, dict) and any(k in audit_text for k in ['handshake', 'approval'])
+    add_check('audit_json', ok, 'parseable JSON with approval/handshake mention' if ok else 'JSON missing handshake/approval text')
+except Exception as e:
+    add_check('audit_json', False, f'error parsing audit json: {e}')
+
+# 4. PDF contains marker text and routing text
+try:
+    pdf_ok = False
+    detail = 'pdf parser unavailable'
+    pdf_path = workspace / 'hierarchy.pdf'
+    if pdf_path.exists() and PyPDF2 is not None:
+        try:
+            reader = PyPDF2.PdfReader(str(pdf_path))
+            extracted = []
+            for page in reader.pages[:5]:
+                try:
+                    extracted.append(page.extract_text() or '')
+                except Exception:
+                    extracted.append('')
+            txt = ' '.join(extracted).lower()
+            pdf_ok = ('pdf-route-alpha-5521' in txt) and ('ilkerkaan' in txt) and ('main' in txt)
+            detail = 'marker and routing names found' if pdf_ok else 'missing marker or routing names'
+        except Exception as e:
+            detail = f'pdf read error: {e}'
+    elif not pdf_path.exists():
+        detail = 'hierarchy.pdf missing'
+    add_check('pdf_content', pdf_ok, detail)
+except Exception as e:
+    add_check('pdf_content', False, f'error checking pdf: {e}')
+
+passed_count = sum(1 for c in checks if c['passed'])
+score = passed_count / len(checks) if checks else 0.0
+result = {"passed": passed_count == len(checks), "score": score, "checks": checks}
+print(json.dumps(result, ensure_ascii=False))

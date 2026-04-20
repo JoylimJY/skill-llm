@@ -1,0 +1,138 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+
+def safe_read(path):
+    try:
+        return Path(path).read_text(encoding='utf-8')
+    except Exception as e:
+        return None, str(e)
+
+
+def normalize(text):
+    try:
+        return re.sub(r'[^a-z0-9]+', '', text.lower())
+    except Exception:
+        return ''
+
+
+def extract_number(text, key_patterns):
+    try:
+        for pat in key_patterns:
+            m = re.search(pat, text, re.IGNORECASE | re.MULTILINE)
+            if m:
+                try:
+                    return float(m.group(1))
+                except Exception:
+                    continue
+    except Exception:
+        return None
+    return None
+
+
+def main():
+    checks = []
+    workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+
+    # Check 1: output file exists
+    try:
+        output_path = workspace / 'output.json'
+        exists = output_path.exists()
+        checks.append({
+            'name': 'output_exists',
+            'passed': bool(exists),
+            'detail': 'output.json found' if exists else 'output.json is missing'
+        })
+    except Exception as e:
+        checks.append({'name': 'output_exists', 'passed': False, 'detail': f'error checking output existence: {e}'})
+
+    # Check 2: parse JSON and required keys
+    output_data = None
+    try:
+        if (workspace / 'output.json').exists():
+            raw = (workspace / 'output.json').read_text(encoding='utf-8')
+            output_data = json.loads(raw)
+            ok = isinstance(output_data, dict) and all(k in output_data for k in ['input_file_count', 'marker_confirmation', 'per_file_scores', 'overall_score', 'conclusion'])
+            checks.append({
+                'name': 'json_structure',
+                'passed': bool(ok),
+                'detail': 'required keys present' if ok else 'missing one or more required keys'
+            })
+        else:
+            checks.append({'name': 'json_structure', 'passed': False, 'detail': 'cannot parse because output.json is missing'})
+    except Exception as e:
+        checks.append({'name': 'json_structure', 'passed': False, 'detail': f'failed to parse json: {e}'})
+
+    # Check 3: marker confirmation
+    try:
+        expected_markers = ['ALPHA-001', 'BETA-002', 'GAMMA-003']
+        confirmed = False
+        if isinstance(output_data, dict):
+            mc = output_data.get('marker_confirmation', '')
+            norm = normalize(str(mc))
+            confirmed = all(normalize(m) in norm for m in expected_markers)
+        checks.append({
+            'name': 'marker_confirmation',
+            'passed': bool(confirmed),
+            'detail': 'all expected markers referenced' if confirmed else 'missing one or more expected markers'
+        })
+    except Exception as e:
+        checks.append({'name': 'marker_confirmation', 'passed': False, 'detail': f'error validating markers: {e}'})
+
+    # Check 4: per-file score count and file naming
+    try:
+        inputs_dir = workspace / 'inputs'
+        expected_files = {'trace_alpha.txt', 'trace_beta.txt', 'trace_gamma.txt'}
+        present_files = {p.name for p in inputs_dir.glob('*')} if inputs_dir.exists() else set()
+        file_count_ok = len(present_files & expected_files) == 3
+        per_file_ok = False
+        if isinstance(output_data, dict):
+            pfs = output_data.get('per_file_scores')
+            per_file_ok = isinstance(pfs, list) and len(pfs) == 3
+        checks.append({
+            'name': 'per_file_scores',
+            'passed': bool(file_count_ok and per_file_ok),
+            'detail': f'found {len(present_files & expected_files)} expected input files and per_file_scores is valid' if file_count_ok and per_file_ok else 'missing input files or invalid per_file_scores'
+        })
+    except Exception as e:
+        checks.append({'name': 'per_file_scores', 'passed': False, 'detail': f'error validating per-file scores: {e}'})
+
+    # Check 5: overall score matches average of per-file scores within tolerance
+    try:
+        ok = False
+        detail = 'could not compute'
+        if isinstance(output_data, dict):
+            pfs = output_data.get('per_file_scores', [])
+            scores = []
+            for item in pfs:
+                try:
+                    if isinstance(item, dict) and 'score' in item:
+                        scores.append(float(item['score']))
+                except Exception:
+                    pass
+            overall = float(output_data.get('overall_score')) if 'overall_score' in output_data else None
+            if scores and overall is not None:
+                avg = sum(scores) / len(scores)
+                ok = abs(avg - overall) <= 1e-6 or abs(avg - overall) <= 0.01
+                detail = f'computed average={avg:.6f}, reported overall={overall:.6f}'
+            else:
+                detail = 'missing numeric scores'
+        checks.append({'name': 'overall_score', 'passed': bool(ok), 'detail': detail})
+    except Exception as e:
+        checks.append({'name': 'overall_score', 'passed': False, 'detail': f'error checking overall score: {e}'})
+
+    passed_count = sum(1 for c in checks if c.get('passed'))
+    total = len(checks)
+    result = {
+        'passed': passed_count == total,
+        'score': (passed_count / total) if total else 0.0,
+        'checks': checks,
+    }
+    print(json.dumps(result, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    main()

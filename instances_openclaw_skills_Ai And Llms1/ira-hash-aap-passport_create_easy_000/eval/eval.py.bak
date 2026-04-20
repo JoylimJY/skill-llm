@@ -1,0 +1,68 @@
+import json
+import re
+from pathlib import Path
+import sys
+
+workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+checks = []
+
+
+def add_check(name, passed, detail):
+    checks.append({"name": name, "passed": bool(passed), "detail": str(detail)})
+
+
+def safe_read(path):
+    try:
+        return path.read_text(encoding='utf-8')
+    except Exception as e:
+        return None, e
+
+# Check 1: aap-summary.md exists and mentions key protocol properties
+try:
+    p = workspace / 'aap-summary.md'
+    if not p.exists():
+        add_check('summary_exists', False, 'aap-summary.md is missing')
+    else:
+        text = p.read_text(encoding='utf-8', errors='replace')
+        t = re.sub(r'\s+', ' ', text.lower())
+        passed = all(x in t for x in ['aap', 'challenge', '7', '6000', 'signature'])
+        add_check('summary_content', passed, 'Found required protocol keywords' if passed else 'Missing one or more required concepts')
+except Exception as e:
+    add_check('summary_content', False, f'Error reading summary: {e}')
+
+# Check 2: aap-config.json exists and has expected defaults
+try:
+    p = workspace / 'aap-config.json'
+    if not p.exists():
+        add_check('config_exists', False, 'aap-config.json is missing')
+    else:
+        data = json.loads(p.read_text(encoding='utf-8'))
+        checks2 = []
+        checks2.append(('challenge_count', str(data.get('challengeCount', data.get('challenge_count', ''))).strip() == '7'))
+        checks2.append(('total_time_ms', str(data.get('totalTimeMs', data.get('total_time_ms', ''))).strip() == '6000'))
+        req_sig = data.get('requireSignature', data.get('require_signature', None))
+        checks2.append(('require_signature', str(req_sig).lower() in ['true', '1', 'yes']))
+        signature_text = str(data.get('signatureFormat', data.get('signature_format', ''))).lower()
+        checks2.append(('signature_format', 'secp256k1' in signature_text or 'json.stringify' in signature_text))
+        passed = all(v for _, v in checks2)
+        detail = '; '.join([f'{k}={v}' for k, v in checks2])
+        add_check('config_content', passed, detail)
+except Exception as e:
+    add_check('config_content', False, f'Error parsing config: {e}')
+
+# Check 3: input marker file exists and contains marker
+try:
+    p = workspace / 'aap_reference.json'
+    if not p.exists():
+        add_check('marker_exists', False, 'aap_reference.json is missing')
+    else:
+        data = json.loads(p.read_text(encoding='utf-8'))
+        marker = str(data.get('marker', ''))
+        passed = 'AAP_MARKER_7F3A'.lower() in marker.lower()
+        add_check('marker_content', passed, f'marker={marker}' if marker else 'marker missing')
+except Exception as e:
+    add_check('marker_content', False, f'Error reading marker file: {e}')
+
+score = (sum(1 for c in checks if c['passed']) / len(checks)) if checks else 0.0
+result = {'passed': all(c['passed'] for c in checks), 'score': score, 'checks': checks}
+print(json.dumps(result, ensure_ascii=False))

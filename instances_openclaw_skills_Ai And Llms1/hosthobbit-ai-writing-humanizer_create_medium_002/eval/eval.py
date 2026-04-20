@@ -1,0 +1,100 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+
+def norm(s):
+    try:
+        s = s.lower()
+        s = re.sub(r'[^a-z0-9\s]', ' ', s)
+        s = re.sub(r'\s+', ' ', s).strip()
+        return s
+    except Exception:
+        return ''
+
+
+def read_text(path):
+    try:
+        return Path(path).read_text(encoding='utf-8'), None
+    except Exception as e:
+        return None, str(e)
+
+
+def main():
+    checks = []
+    workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+    output_path = workspace / 'output.txt'
+    input_path = workspace / 'input.txt'
+    marker_path = workspace / 'marker.json'
+
+    expected_markers = [
+        'platform', 'teams', 'faster', 'smarter', 'automate', 'visibility', 'collaboration'
+    ]
+    banned_markers = [
+        'at the end of the day', 'it is important to remember', 'first', 'secondly', 'finally',
+        'i hope this helps', 'let me know if you have any questions'
+    ]
+
+    try:
+        exists = output_path.exists()
+        detail = 'output.txt exists' if exists else 'output.txt is missing'
+        checks.append({'name': 'output_exists', 'passed': bool(exists), 'detail': detail})
+    except Exception as e:
+        checks.append({'name': 'output_exists', 'passed': False, 'detail': f'error checking existence: {e}'})
+
+    text = ''
+    try:
+        if output_path.exists():
+            text = output_path.read_text(encoding='utf-8')
+            checks.append({'name': 'output_nonempty', 'passed': bool(text.strip()), 'detail': 'output has content' if text.strip() else 'output is empty'})
+        else:
+            checks.append({'name': 'output_nonempty', 'passed': False, 'detail': 'output.txt missing'})
+    except Exception as e:
+        checks.append({'name': 'output_nonempty', 'passed': False, 'detail': f'could not read output: {e}'})
+
+    try:
+        ntext = norm(text)
+        banned_found = [b for b in banned_markers if norm(b) in ntext]
+        passed = len(banned_found) == 0 and bool(text)
+        detail = 'no banned AI phrases found' if passed else f'banned phrases found: {", ".join(banned_found)}'
+        checks.append({'name': 'no_stock_phrases', 'passed': passed, 'detail': detail})
+    except Exception as e:
+        checks.append({'name': 'no_stock_phrases', 'passed': False, 'detail': f'error scanning phrases: {e}'})
+
+    try:
+        ntext = norm(text)
+        found = [m for m in expected_markers if m in ntext]
+        passed = len(found) >= 5
+        detail = f'found markers: {", ".join(found)}' if found else 'no expected meaning markers found'
+        checks.append({'name': 'preserves_meaning', 'passed': passed, 'detail': detail})
+    except Exception as e:
+        checks.append({'name': 'preserves_meaning', 'passed': False, 'detail': f'error checking meaning: {e}'})
+
+    try:
+        marker_ok = False
+        if marker_path.exists():
+            raw = marker_path.read_text(encoding='utf-8')
+            data = json.loads(raw)
+            marker_ok = norm(str(data.get('marker', ''))) == norm('HUMANIZE_TASK_MARKER_8427')
+        checks.append({'name': 'input_marker_present', 'passed': bool(marker_ok), 'detail': 'marker.json contains expected marker' if marker_ok else 'marker.json missing or invalid'})
+    except Exception as e:
+        checks.append({'name': 'input_marker_present', 'passed': False, 'detail': f'could not validate marker: {e}'})
+
+    try:
+        input_ok = input_path.exists()
+        checks.append({'name': 'input_exists', 'passed': bool(input_ok), 'detail': 'input.txt exists' if input_ok else 'input.txt is missing'})
+    except Exception as e:
+        checks.append({'name': 'input_exists', 'passed': False, 'detail': f'error checking input: {e}'})
+
+    total = len(checks)
+    passed_count = sum(1 for c in checks if c.get('passed'))
+    score = passed_count / total if total else 0.0
+    passed = passed_count == total
+
+    print(json.dumps({'passed': passed, 'score': score, 'checks': checks}, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    main()

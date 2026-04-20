@@ -1,0 +1,99 @@
+import json
+import os
+import re
+from pathlib import Path
+import sys
+
+
+def safe_read(path):
+    try:
+        return Path(path).read_text(encoding='utf-8')
+    except Exception as e:
+        return None, str(e)
+
+
+def check_file_exists(path, name):
+    try:
+        exists = Path(path).exists()
+        return {'name': name, 'passed': bool(exists), 'detail': 'exists' if exists else f'missing: {path}'}
+    except Exception as e:
+        return {'name': name, 'passed': False, 'detail': f'error checking existence: {e}'}
+
+
+def normalize(s):
+    try:
+        return re.sub(r'[^a-z0-9]+', '', s.lower())
+    except Exception:
+        return ''
+
+
+def main():
+    checks = []
+    try:
+        ws = Path(sys.argv[1])
+    except Exception as e:
+        print(json.dumps({'passed': False, 'score': 0.0, 'checks': [{'name': 'workspace-arg', 'passed': False, 'detail': f'missing or invalid workspace argument: {e}'}]}))
+        return
+
+    status_path = ws / 'status.json'
+    cache_path = ws / 'cache.json'
+
+    checks.append(check_file_exists(status_path, 'status-file-exists'))
+    checks.append(check_file_exists(cache_path, 'cache-file-exists'))
+
+    try:
+        status_text, err = safe_read(status_path)
+        if status_text is None:
+            checks.append({'name': 'status-json-parse', 'passed': False, 'detail': f'cannot read status.json: {err}'})
+        else:
+            try:
+                data = json.loads(status_text)
+                ok = isinstance(data, dict) and 'models' in data and 'stats' in data
+                checks.append({'name': 'status-json-structure', 'passed': ok, 'detail': 'contains models and stats' if ok else 'missing required keys'})
+                try:
+                    gem = data.get('models', {}).get('gemini-3-flash', {})
+                    usage = str(gem.get('usage_pct', ''))
+                    ok2 = '75' in usage or '75.0' in usage
+                    checks.append({'name': 'status-gemini-usage', 'passed': ok2, 'detail': f'usage_pct={usage}'})
+                except Exception as e:
+                    checks.append({'name': 'status-gemini-usage', 'passed': False, 'detail': f'error reading usage: {e}'})
+                try:
+                    stats = data.get('stats', {})
+                    ok3 = int(stats.get('blocks', -1)) >= 1 and int(stats.get('fallbacks', -1)) >= 0
+                    checks.append({'name': 'status-stats', 'passed': ok3, 'detail': f"blocks={stats.get('blocks')} fallbacks={stats.get('fallbacks')}"})
+                except Exception as e:
+                    checks.append({'name': 'status-stats', 'passed': False, 'detail': f'error reading stats: {e}'})
+            except Exception as e:
+                checks.append({'name': 'status-json-parse', 'passed': False, 'detail': f'invalid json: {e}'})
+    except Exception as e:
+        checks.append({'name': 'status-json-parse', 'passed': False, 'detail': f'exception: {e}'})
+
+    try:
+        cache_text, err = safe_read(cache_path)
+        if cache_text is None:
+            checks.append({'name': 'cache-json-parse', 'passed': False, 'detail': f'cannot read cache.json: {err}'})
+        else:
+            try:
+                cache = json.loads(cache_text)
+                ok = isinstance(cache, dict) and any(normalize(k) for k in cache.keys())
+                checks.append({'name': 'cache-json-structure', 'passed': ok, 'detail': 'cache has keys' if ok else 'cache empty or malformed'})
+                try:
+                    joined = normalize(json.dumps(cache, ensure_ascii=False))
+                    marker_ok = 'alpha123' in joined or 'beta456' in joined or 'gamma789' in joined
+                    checks.append({'name': 'cache-marker-content', 'passed': marker_ok, 'detail': 'marker content present' if marker_ok else 'missing known markers'})
+                except Exception as e:
+                    checks.append({'name': 'cache-marker-content', 'passed': False, 'detail': f'error scanning cache: {e}'})
+            except Exception as e:
+                checks.append({'name': 'cache-json-parse', 'passed': False, 'detail': f'invalid json: {e}'})
+    except Exception as e:
+        checks.append({'name': 'cache-json-parse', 'passed': False, 'detail': f'exception: {e}'})
+
+    total = len(checks)
+    passed = sum(1 for c in checks if c.get('passed'))
+    score = (passed / total) if total else 0.0
+    result = {'passed': passed == total and total > 0, 'score': score, 'checks': checks}
+    print(json.dumps(result, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    main()

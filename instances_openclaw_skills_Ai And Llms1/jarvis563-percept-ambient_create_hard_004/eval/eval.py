@@ -1,0 +1,88 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+
+def normalize(text):
+    return re.sub(r'[^a-z0-9]+', '', (text or '').lower())
+
+
+def safe_read(path):
+    try:
+        return Path(path).read_text(encoding='utf-8'), None
+    except Exception as e:
+        return None, str(e)
+
+
+def main():
+    workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+    checks = []
+
+    def add_check(name, passed, detail):
+        checks.append({'name': name, 'passed': bool(passed), 'detail': detail})
+
+    try:
+        summary_path = workspace / 'summary.txt'
+        if summary_path.exists():
+            text, err = safe_read(summary_path)
+            ok = text is not None and 'project lumen' in text.lower() and 'northstar labs' in text.lower()
+            add_check('summary_exists_and_mentions_core_entities', ok, 'Found summary.txt with expected references.' if ok else f'summary.txt content missing expected terms; error={err}')
+        else:
+            add_check('summary_exists_and_mentions_core_entities', False, 'summary.txt is missing.')
+    except Exception as e:
+        add_check('summary_exists_and_mentions_core_entities', False, f'Unexpected error: {e}')
+
+    try:
+        export_path = workspace / 'context_packet.json'
+        if export_path.exists():
+            raw, err = safe_read(export_path)
+            if raw is None:
+                add_check('context_packet_json_valid', False, f'Could not read file: {err}')
+            else:
+                try:
+                    obj = json.loads(raw)
+                    ok = isinstance(obj, dict) and any(k in obj for k in ['recent_conversations', 'resolved_entities', 'relationships', 'relevant_history'])
+                    add_check('context_packet_json_valid', ok, 'Parsed JSON and found context-packet style keys.' if ok else 'JSON parsed but expected keys were absent.')
+                except Exception as e:
+                    add_check('context_packet_json_valid', False, f'Invalid JSON: {e}')
+        else:
+            add_check('context_packet_json_valid', False, 'context_packet.json is missing.')
+    except Exception as e:
+        add_check('context_packet_json_valid', False, f'Unexpected error: {e}')
+
+    try:
+        entities_path = workspace / 'entities.csv'
+        if entities_path.exists():
+            text, err = safe_read(entities_path)
+            if text is None:
+                add_check('entities_csv_contains_expected_rows', False, f'Could not read file: {err}')
+            else:
+                norm = normalize(text)
+                ok = 'avery' in norm and 'jordan' in norm and 'northstarlabs' in norm and 'projectlumen' in norm
+                add_check('entities_csv_contains_expected_rows', ok, 'entities.csv includes expected entity names.' if ok else 'entities.csv missing one or more expected entities.')
+        else:
+            add_check('entities_csv_contains_expected_rows', False, 'entities.csv is missing.')
+    except Exception as e:
+        add_check('entities_csv_contains_expected_rows', False, f'Unexpected error: {e}')
+
+    try:
+        marker_path = workspace / 'data' / 'marker.txt'
+        if marker_path.exists():
+            text, err = safe_read(marker_path)
+            ok = text is not None and 'marker_percept_42' in text.lower()
+            add_check('input_marker_present', ok, 'Marker file verified.' if ok else f'Marker content mismatch; error={err}')
+        else:
+            add_check('input_marker_present', False, 'Marker file is missing.')
+    except Exception as e:
+        add_check('input_marker_present', False, f'Unexpected error: {e}')
+
+    score = sum(1 for c in checks if c['passed']) / max(len(checks), 1)
+    passed = all(c['passed'] for c in checks)
+    result = {'passed': passed, 'score': score, 'checks': checks}
+    print(json.dumps(result, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    main()

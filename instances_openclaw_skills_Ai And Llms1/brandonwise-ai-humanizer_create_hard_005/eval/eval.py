@@ -1,0 +1,126 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+
+def safe_read(path):
+    try:
+        return Path(path).read_text(encoding='utf-8'), None
+    except Exception as e:
+        return None, str(e)
+
+
+def normalize(s):
+    try:
+        s = s.lower()
+        s = re.sub(r'[^a-z0-9\s]+', ' ', s)
+        s = re.sub(r'\s+', ' ', s).strip()
+        return s
+    except Exception:
+        return ''
+
+
+def contains_fuzzy(text, phrases):
+    nt = normalize(text)
+    for ph in phrases:
+        np = normalize(ph)
+        if np and np in nt:
+            return True
+    return False
+
+
+def main():
+    workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(".")
+    checks = []
+
+    def add_check(name, passed, detail):
+        checks.append({'name': name, 'passed': bool(passed), 'detail': detail})
+
+    try:
+        output_path = workspace / 'humanized.txt'
+        if output_path.exists():
+            try:
+                out = output_path.read_text(encoding='utf-8')
+            except Exception as e:
+                out = None
+                add_check('output readable', False, f'Could not read humanized.txt: {e}')
+            else:
+                add_check('output exists', True, 'humanized.txt found')
+                # marker preservation
+                markers = ['ALPHA_MARKER_17', 'BETA_MARKER_42', 'OMEGA_MARKER_99']
+                marker_hits = 0
+                for m in markers:
+                    if contains_fuzzy(out, [m]):
+                        marker_hits += 1
+                add_check('marker tokens preserved', marker_hits == len(markers), f'{marker_hits}/{len(markers)} markers found')
+
+                # humanization quality checks
+                banned = [
+                    "in today's rapidly evolving digital landscape",
+                    'it is worth noting',
+                    'serves as a testament',
+                    'leverages a robust',
+                    'comprehensive framework',
+                    'holistic approach',
+                    'the future looks bright',
+                    'exciting times lie ahead',
+                    'great question'
+                ]
+                banned_hits = [b for b in banned if contains_fuzzy(out, [b])]
+                add_check('removed obvious AI phrases', len(banned_hits) <= 2, f'banned phrase hits: {banned_hits[:5]}')
+
+                # Ensure output is not identical to input style by checking some concrete changes
+                input_path = workspace / 'draft.txt'
+                try:
+                    inp = input_path.read_text(encoding='utf-8')
+                except Exception as e:
+                    inp = None
+                    add_check('input readable', False, f'Could not read draft.txt: {e}')
+                else:
+                    add_check('input readable', True, 'draft.txt found')
+                    add_check('text changed', normalize(out) != normalize(inp), 'output differs from input after normalization')
+
+                # length sanity: keep meaning, not too short
+                try:
+                    out_words = len(re.findall(r'\b\w+\b', out or ''))
+                    in_words = len(re.findall(r'\b\w+\b', inp or '')) if inp else 0
+                    ratio = (out_words / in_words) if in_words else 0
+                    add_check('reasonable length', 0.55 <= ratio <= 1.4, f'word ratio={ratio:.2f} (out={out_words}, in={in_words})')
+                except Exception as e:
+                    add_check('reasonable length', False, f'length check error: {e}')
+
+                # report file - check for report.txt (what agents typically create)
+                report_path = workspace / 'report.txt'
+                if report_path.exists():
+                    try:
+                        report = report_path.read_text(encoding='utf-8')
+                    except Exception as e:
+                        add_check('report readable', False, f'Could not read report.txt: {e}')
+                    else:
+                        add_check('report exists', True, 'report.txt found')
+                        add_check('report mentions changes', contains_fuzzy(report, ['changes', 'rewrote', 'removed', 'tone']), 'report appears to summarize edits')
+                else:
+                    add_check('report exists', False, 'report.txt missing')
+        else:
+            add_check('output exists', False, 'humanized.txt missing')
+            add_check('marker tokens preserved', False, 'cannot verify because output file is missing')
+            add_check('removed obvious AI phrases', False, 'cannot verify because output file is missing')
+            add_check('input readable', (workspace / 'draft.txt').exists(), 'draft.txt presence checked only')
+            add_check('text changed', False, 'cannot verify because output file is missing')
+            add_check('reasonable length', False, 'cannot verify because output file is missing')
+            add_check('report exists', (workspace / 'report.txt').exists(), 'report presence checked only')
+            add_check('report mentions changes', False, 'cannot verify because report file is missing')
+    except Exception as e:
+        add_check('fatal safety', False, f'Unexpected evaluator error handled safely: {e}')
+
+    total = len(checks)
+    passed = sum(1 for c in checks if c['passed'])
+    score = (passed / total) if total else 0.0
+    result = {'passed': passed == total and total > 0, 'score': score, 'checks': checks}
+    print(json.dumps(result, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,155 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+
+def load_text(path):
+    try:
+        return Path(path).read_text(encoding="utf-8")
+    except Exception as e:
+        return None, f"failed to read {path}: {e}"
+
+
+def normalize(s):
+    s = s.lower()
+    s = re.sub(r"[^a-z0-9]+", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def has_any(text, phrases):
+    nt = normalize(text)
+    return any(normalize(p) in nt for p in phrases)
+
+
+def main():
+    checks = []
+    workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path.cwd()
+    out_path = workspace / "output.md"
+
+    try:
+        exists = out_path.exists()
+        checks.append({
+            "name": "output file exists",
+            "passed": bool(exists),
+            "detail": "output.md found" if exists else "output.md is missing"
+        })
+    except Exception as e:
+        checks.append({
+            "name": "output file exists",
+            "passed": False,
+            "detail": f"error checking existence: {e}"
+        })
+
+    text = ""
+    if out_path.exists():
+        try:
+            text = out_path.read_text(encoding="utf-8")
+            checks.append({
+                "name": "non-empty content",
+                "passed": len(text.strip()) > 0,
+                "detail": f"content length={len(text.strip())}" if text.strip() else "file is empty"
+            })
+        except Exception as e:
+            checks.append({
+                "name": "non-empty content",
+                "passed": False,
+                "detail": f"failed to read output.md: {e}"
+            })
+    else:
+        checks.append({
+            "name": "non-empty content",
+            "passed": False,
+            "detail": "skipped because output.md is missing"
+        })
+
+    required_sections = [
+        "Opening",
+        "Setup",
+        "The Problem",
+        "Core Concept",
+        "Real-World Examples",
+        "Broader Implications",
+        "Closing",
+        "Q&A Preparation",
+    ]
+    try:
+        present = []
+        missing = []
+        for sec in required_sections:
+            if has_any(text, [sec, sec.replace("&", "and")]):
+                present.append(sec)
+            else:
+                missing.append(sec)
+        checks.append({
+            "name": "required sections",
+            "passed": len(missing) == 0,
+            "detail": f"present={present}; missing={missing}" if missing else f"all sections found: {present}"
+        })
+    except Exception as e:
+        checks.append({
+            "name": "required sections",
+            "passed": False,
+            "detail": f"error while checking sections: {e}"
+        })
+
+    try:
+        marker_ok = has_any(text, ["TED-TALK-TASK-MARKER-9f3c1a", "debugging insight notes", "observability", "technical storytelling"])
+        checks.append({
+            "name": "uses provided notes",
+            "passed": bool(marker_ok),
+            "detail": "references marker or key note concepts" if marker_ok else "does not appear to use the provided notes"
+        })
+    except Exception as e:
+        checks.append({
+            "name": "uses provided notes",
+            "passed": False,
+            "detail": f"error while checking note usage: {e}"
+        })
+
+    try:
+        word_count = len(re.findall(r"\b\w+\b", text))
+        passed = word_count >= 900
+        checks.append({
+            "name": "substantial length",
+            "passed": passed,
+            "detail": f"word_count={word_count}" if text else "no text available"
+        })
+    except Exception as e:
+        checks.append({
+            "name": "substantial length",
+            "passed": False,
+            "detail": f"error counting words: {e}"
+        })
+
+    try:
+        qna_ok = has_any(text, ["q&a preparation", "q and a preparation", "common objections", "skeptics", "questions and responses"])
+        checks.append({
+            "name": "q&a preparation included",
+            "passed": bool(qna_ok),
+            "detail": "Q&A-style material found" if qna_ok else "Q&A preparation section not detected"
+        })
+    except Exception as e:
+        checks.append({
+            "name": "q&a preparation included",
+            "passed": False,
+            "detail": f"error while checking Q&A: {e}"
+        })
+
+    total = len(checks)
+    passed_count = sum(1 for c in checks if c.get("passed"))
+    score = (passed_count / total) if total else 0.0
+    result = {
+        "passed": passed_count == total,
+        "score": score,
+        "checks": checks,
+    }
+    print(json.dumps(result, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print(json.dumps({"passed": False, "score": 0.0, "checks": [{"name": "fatal error", "passed": False, "detail": str(e)}]}))

@@ -1,0 +1,1002 @@
+Building Docker image...
+Creating new container...
+Container ready: 7985859ba6af
+Workspace files: SKILL.md
+gen_inputs.py
+scripts
+setup.sh
+test_prompts.json
+
+============================================================
+Starting agent interaction (Repair Mode)...
+============================================================
+
+============================================================
+TASK: Implement the TokenGuard engine in `scripts/token_guard.py` (pure Python 3.10+, no dependencies).
+
+**TokenGuard class requirements:**
+1. `check(prompt, model)` → returns decision with: action (proceed/wait/fallback/block), estimated_tokens, wait_seconds, fallback_model, reason
+2. `record_usage(tokens, model)` - track per-model per-minute usage
+3. `cache_response(prompt, response)` - response caching
+4. `record_429(model, retry_delay)` - parse 429 errors
+5. `status()` → dict with models/stats info
+
+**Core logic:**
+- CJK-aware token estimation (CJK chars count more than ASCII)
+- Sliding window quota tracking per model
+- Smart throttle: wait at >80% quota, block at >95%
+- Duplicate detection: block if same prompt seen 3+ times in 60s
+- Auto model fallback on quota issues
+
+Keep implementation concise and focused on core logic.
+============================================================
+
+
+--- Turn 1/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+ls -la /workspace
+```
+
+[EXECUTING bash]:
+ls -la /workspace
+
+[OUTPUT]:
+total 32
+drwxr-xr-x 1 root  root    123 Apr 13 11:55 .
+drwxr-xr-x 1 root  root     46 Apr 13 11:55 ..
+-rw-r--r-- 1 root  root    256 Apr 13 11:55 SKILL.md
+-rw-r--r-- 1 32113 42021  1033 Apr 12 11:18 gen_inputs.py
+drwxr-xr-x 2 root  root     10 Apr 13 11:55 scripts
+-rwxr-xr-x 1 32113 42021    17 Apr 12 11:18 setup.sh
+-rw-r--r-- 1 root  root  17031 Apr 13 11:55 test_prompts.json
+
+
+--- Turn 2/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+ls -la /workspace/scripts && cat /workspace/SKILL.md
+```
+
+[EXECUTING bash]:
+ls -la /workspace/scripts && cat /workspace/SKILL.md
+
+[OUTPUT]:
+total 0
+drwxr-xr-x 2 root root  10 Apr 13 11:55 .
+drwxr-xr-x 1 root root 123 Apr 13 11:55 ..
+# TokenGuard — LLM API 429 Prevention Engine
+
+**Version:** 1.5.0
+
+## Supported Models
+
+- gemini-3-flash (1M TPM)
+- gemini-3-pro (2M TPM)
+- claude-haiku (50K TPM)
+- claude-sonnet (200K TPM)
+- claude-opus (200K TPM)
+- gpt-4o (800K TPM)
+- deepseek (1M TPM)
+
+
+--- Turn 3/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/test_prompts.json
+```
+
+[EXECUTING bash]:
+cat /workspace/test_prompts.json
+
+[OUTPUT]:
+{
+  "short_prompt": "Hello, how are you today?",
+  "medium_prompt": "Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. Explain the concept of rate limiting in APIs. ",
+  "cjk_prompt": "你好世界。这是一个测试提示词，用于验证CJK字符的token估算功能。你好世界。这是一个测试提示词，用于验证CJK字符的token估算功能。你好世界。这是一个测试提示词，用于验证CJK字符的token估算功能。你好世界。这是一个测试提示词，用于验证CJK字符的token估算功能。你好世界。这是一个测试提示词，用于验证CJK字符的token估算功能。你好世界。这是一个测试提示词，用于验证CJK字符的token估算功能。你好世界。这是一个测试提示词，用于验证CJK字符的token估算功能。你好世界。这是一个测试提示词，用于验证CJK字符的token估算功能。你好世界。这是一个测试提示词，用于验证CJK字符的token估算功能。你好世界。这是一个测试提示词，用于验证CJK字符的token估算功能。",
+  "long_prompt": "This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long document. This is a very long ...
+
+--- Turn 4/25 ---
+
+[ASSISTANT]:
+
+
+Now I understand the requirements. Let me implement the TokenGuard engine:
+
+```python
+cat > /workspace/scripts/token_guard.py << 'EOF'
+"""TokenGuard - LLM API 429 Prevention Engine"""
+
+import time
+import re
+from collections import defaultdict
+from dataclasses import dataclass, field
+from typing import Optional
+
+
+@dataclass
+class Decision:
+    action: str  # proceed, wait, fallback, block
+    estimated_tokens: int
+    wait_seconds: float = 0
+    fallback_model: Optional[str] = None
+    reason: str = ""
+
+
+class TokenGuard:
+    """TokenGuard engine for LLM rate limiting and quota management."""
+    
+    # Model TPM (tokens per minute) limits
+    MODEL_LIMITS = {
+        "gemini-3-flash": 1_000_000,
+        "gemini-3-pro": 2_000_000,
+        "claude-haiku": 50_000,
+        "claude-sonnet": 200_000,
+        "claude-opus": 200_000,
+        "gpt-4o": 800_000,
+        "deepseek": 1_000_000,
+    }
+    
+    # Fallback hierarchy (fallback to models with higher limits)
+    FALLBACK_ORDER = ["dee...
+
+--- Turn 5/25 ---
+
+[ASSISTANT]:
+
+
+```python
+cat > /workspace/scripts/token_guard.py << 'EOF'
+"""TokenGuard - LLM API 429 Prevention Engine"""
+
+import time
+import re
+from collections import defaultdict
+from dataclasses import dataclass, field
+from typing import Optional
+
+
+@dataclass
+class Decision:
+    action: str  # proceed, wait, fallback, block
+    estimated_tokens: int
+    wait_seconds: float = 0
+    fallback_model: Optional[str] = None
+    reason: str = ""
+
+
+class TokenGuard:
+    """TokenGuard engine for LLM rate limiting and quota management."""
+    
+    # Model TPM (tokens per minute) limits
+    MODEL_LIMITS = {
+        "gemini-3-flash": 1_000_000,
+        "gemini-3-pro": 2_000_000,
+        "claude-haiku": 50_000,
+        "claude-sonnet": 200_000,
+        "claude-opus": 200_000,
+        "gpt-4o": 800_000,
+        "deepseek": 1_000_000,
+    }
+    
+    # Fallback hierarchy (fallback to models with higher limits)
+    FALLBACK_ORDER = ["deepseek", "gemini-3-flash", "gemini-3-pro", "gpt-4o", "claude-opus", "claude-s...
+
+[EXECUTING python]:
+cat > /workspace/scripts/token_guard.py << 'EOF'
+"""TokenGuard - LLM API 429 Prevention Engine"""
+
+import time
+import re
+from collections import defaultdict
+from dataclasses import dataclass, field
+from typing import Optional
+
+
+@dataclass
+class Decision:
+    action: str  # proceed, wait, fallback, block
+    estimated_tokens: int
+    wait_seconds: float = 0
+    fallback_model: Optional[str] = None
+    reason: str = ""
+
+
+class TokenGuard:
+    """TokenGuard engine for LLM rate limiting and quota management."""
+    
+    # Model TPM (tokens per minute) limits
+    MODEL_LIMITS = {
+        "gemini-3-flash": 1_000_000,
+        "gemini-3-pro": 2_000_000,
+        "claude-haiku": 50_000,
+        "claude-sonnet": 200_000,
+        "claude-opus": 200_000,
+        "gpt-4o": 800_000,
+        "deepseek": 1_000_000,
+    }
+    
+    # Fallback hierarchy (fallback to models with higher limits)
+    FALLBACK_ORDER = ["deepseek", "gemini-3-flash", "gemini-3-pro", "gpt-4o", "claude-opus", "claude-sonnet", "claude-haiku"]
+    
+    def __init__(self):
+        self._usage_history: dict[str, list[tuple[float, int]]] = defaultdict(list)
+        self._response_cache: dict[str, dict] = {}
+        self._prompt_history: list[tuple[str, float]] = []
+        self._rate_limit_info: dict[str, dict] = {}
+    
+    def _estimate_tokens(self, text: str) -> int:
+        """CJK-aware token estimation. CJK chars count more than ASCII."""
+        cjk_pattern = re.compile(r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]')
+        cjk_chars = len(cjk_pattern.findall(text))
+        ascii_chars = len(text) - cjk_chars
+        
+        cjk_tokens = int(cjk_chars * 1.5)
+        ascii_tokens = max(1, ascii_chars // 4) if ascii_chars > 0 else 0
+        
+        return cjk_tokens + ascii_tokens
+    
+    def _cleanup_old_entries(self, model: str, current_time: float, window: int = 60):
+        """Remove entries older than the sliding window."""
+        cutoff = current_time - window
+        self._usage_history[model] = [
+            (ts, tokens) for ts, tokens in self._usage_history[model]
+            if ts > cutoff
+        ]
+    
+    def _get_usage_in_window(self, model: str, window: int = 60) -> int:
+        """Get total tokens used in the sliding window."""
+        current_time = time.time()
+        self._cleanup_old_entries(model, current_time, window)
+        return sum(tokens for _, tokens in self._usage_history[model])
+    
+    def _get_quota_percentage(self, model: str) -> float:
+        """Get current quota usage percentage for a model."""
+        limit = self.MODEL_LIMITS.get(model, 100_000)
+        used = self._get_usage_in_window(model)
+        return (used / limit) * 100
+    
+    def _find_fallback_model(self, current_model: str) -> Optional[str]:
+        """Find a fallback model with available quota."""
+        for model in self.FALLBACK_ORDER:
+            if model != current_model and self._get_quota_percentage(model) < 80:
+                return model
+        return None
+    
+    def _check_duplicate(self, prompt: str, threshold: int = 3, window: int = 60) -> bool:
+        """Check if prompt has been seen threshold times in window seconds."""
+        current_time = time.time()
+        cutoff = current_time - window
+        
+        self._prompt_history = [(p, t) for p, t in self._prompt_history if t > cutoff]
+        count = sum(1 for p, _ in self._prompt_history if p == prompt)
+        return count >= threshold
+    
+    def _add_prompt_to_history(self, prompt: str):
+        """Add prompt to history for duplicate detection."""
+        self._prompt_history.append((prompt, time.time()))
+    
+    def check(self, prompt: str, model: str) -> Decision:
+        """Check if request should proceed, wait, fallback, or block."""
+        estimated_tokens = self._estimate_tokens(prompt)
+        quota_pct = self._get_quota_percentage(model)
+        
+        if self._check_duplicate(prompt):
+            return Decision(
+                action="block",
+                estimated_tokens=estimated_tokens,
+                reason="Duplicate prompt detected (3+ times in 60s)"
+            )
+        
+        if model in self._rate_limit_info:
+            info = self._rate_limit_info[model]
+            if info["last_429"] and time.time() - info["last_429"] < info["retry_after"]:
+                wait_time = info["retry_after"] - (time.time() - info["last_429"])
+                return Decision(
+                    action="wait",
+                    estimated_tokens=estimated_tokens,
+                    wait_seconds=max(0, wait_time),
+                    reason=f"Rate limited, retry after {wait_time:.1f}s"
+                )
+        
+        if quota_pct > 95:
+            return Decision(
+                action="block",
+                estimated_tokens=estimated_tokens,
+                reason=f"Quota exceeded: {quota_pct:.1f}% used"
+            )
+        
+        if quota_pct > 80:
+            fallback = self._find_fallback_model(model)
+            if fallback:
+                return Decision(
+                    action="fallback",
+                    estimated_tokens=estimated_tokens,
+                    fallback_model=fallback,
+                    reason=f"High quota usage ({quota_pct:.1f}%), fallback to {fallback}"
+                )
+            else:
+                wait_time = max(1, (quota_pct - 80) * 0.5)
+                return Decision(
+                    action="wait",
+                    estimated_tokens=estimated_tokens,
+                    wait_seconds=wait_time,
+                    reason=f"High quota usage ({quota_pct:.1f}%), wait {wait_time:.1f}s"
+                )
+        
+        if prompt in self._response_cache:
+            cached = self._response_cache[prompt]
+            if time.time() - cached["timestamp"] < 300:
+                return Decision(
+                    action="proceed",
+                    estimated_tokens=estimated_tokens,
+                    reason=f"Cached response available"
+                )
+        
+        self._add_prompt_to_history(prompt)
+        return Decision(
+            action="proceed",
+            estimated_tokens=estimated_tokens,
+            reason="OK"
+        )
+    
+    def record_usage(self, tokens: int, model: str):
+        """Record token usage for a model."""
+        self._usage_history[model].append((time.time(), tokens))
+    
+    def cache_response(self, prompt: str, response: str):
+        """Cache a response for future use."""
+        self._response_cache[prompt] = {
+            "response": response,
+            "timestamp": time.time()
+        }
+    
+    def record_429(self, model: str, retry_delay: float):
+        """Parse 429 error and record rate limit info."""
+        self._rate_limit_info[model] = {
+            "retry_after": retry_delay,
+            "last_429": time.time()
+        }
+    
+    def status(self) -> dict:
+        """Return status dict with models and stats info."""
+        models_status = {}
+        for model in self.MODEL_LIMITS:
+            used = self._get_usage_in_window(model)
+            limit = self.MODEL_LIMITS[model]
+            models_status[model] = {
+                "tokens_used": used,
+                "limit": limit,
+                "percentage": round((used / limit) * 100, 2),
+                "status": "blocked" if (used / limit) > 0.95 else "throttled" if (used / limit) > 0.8 else "ok"
+            }
+        
+        return {
+            "models": models_status,
+            "stats": {
+                "cached_responses": len(self._response_cache),
+                "tracked_prompts": len(self._prompt_history),
+                "rate_limited_models": len([m for m in self._rate_limit_info if self._rate_limit_info[m]["last_429"]])
+            }
+        }
+EOF
+
+[OUTPUT]:
+[EXIT CODE: 1]
+  File "/tmp/_agent_script.py", line 1
+    cat > /workspace/scripts/token_guard.py << 'EOF'
+          ^
+SyntaxError: invalid syntax
+
+
+--- Turn 6/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat > /workspace/scripts/token_guard.py << 'EOF'
+"""TokenGuard - LLM API 429 Prevention Engine"""
+
+import time
+import re
+from collections import defaultdict
+from dataclasses import dataclass, field
+from typing import Optional
+
+
+@dataclass
+class Decision:
+    action: str  # proceed, wait, fallback, block
+    estimated_tokens: int
+    wait_seconds: float = 0
+    fallback_model: Optional[str] = None
+    reason: str = ""
+
+
+class TokenGuard:
+    """TokenGuard engine for LLM rate limiting and quota management."""
+    
+    # Model TPM (tokens per minute) limits
+    MODEL_LIMITS = {
+        "gemini-3-flash": 1_000_000,
+        "gemini-3-pro": 2_000_000,
+        "claude-haiku": 50_000,
+        "claude-sonnet": 200_000,
+        "claude-opus": 200_000,
+        "gpt-4o": 800_000,
+        "deepseek": 1_000_000,
+    }
+    
+    # Fallback hierarchy (fallback to models with higher limits)
+    FALLBACK_ORDER = ["deepseek", "gemini-3-flash", "gemini-3-pro", "gpt-4o", "claude-opus", "claude-son...
+
+[EXECUTING bash]:
+cat > /workspace/scripts/token_guard.py << 'EOF'
+"""TokenGuard - LLM API 429 Prevention Engine"""
+
+import time
+import re
+from collections import defaultdict
+from dataclasses import dataclass, field
+from typing import Optional
+
+
+@dataclass
+class Decision:
+    action: str  # proceed, wait, fallback, block
+    estimated_tokens: int
+    wait_seconds: float = 0
+    fallback_model: Optional[str] = None
+    reason: str = ""
+
+
+class TokenGuard:
+    """TokenGuard engine for LLM rate limiting and quota management."""
+    
+    # Model TPM (tokens per minute) limits
+    MODEL_LIMITS = {
+        "gemini-3-flash": 1_000_000,
+        "gemini-3-pro": 2_000_000,
+        "claude-haiku": 50_000,
+        "claude-sonnet": 200_000,
+        "claude-opus": 200_000,
+        "gpt-4o": 800_000,
+        "deepseek": 1_000_000,
+    }
+    
+    # Fallback hierarchy (fallback to models with higher limits)
+    FALLBACK_ORDER = ["deepseek", "gemini-3-flash", "gemini-3-pro", "gpt-4o", "claude-opus", "claude-sonnet", "claude-haiku"]
+    
+    def __init__(self):
+        self._usage_history: dict[str, list[tuple[float, int]]] = defaultdict(list)
+        self._response_cache: dict[str, dict] = {}
+        self._prompt_history: list[tuple[str, float]] = []
+        self._rate_limit_info: dict[str, dict] = {}
+    
+    def _estimate_tokens(self, text: str) -> int:
+        """CJK-aware token estimation. CJK chars count more than ASCII."""
+        cjk_pattern = re.compile(r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]')
+        cjk_chars = len(cjk_pattern.findall(text))
+        ascii_chars = len(text) - cjk_chars
+        
+        cjk_tokens = int(cjk_chars * 1.5)
+        ascii_tokens = max(1, ascii_chars // 4) if ascii_chars > 0 else 0
+        
+        return cjk_tokens + ascii_tokens
+    
+    def _cleanup_old_entries(self, model: str, current_time: float, window: int = 60):
+        """Remove entries older than the sliding window."""
+        cutoff = current_time - window
+        self._usage_history[model] = [
+            (ts, tokens) for ts, tokens in self._usage_history[model]
+            if ts > cutoff
+        ]
+    
+    def _get_usage_in_window(self, model: str, window: int = 60) -> int:
+        """Get total tokens used in the sliding window."""
+        current_time = time.time()
+        self._cleanup_old_entries(model, current_time, window)
+        return sum(tokens for _, tokens in self._usage_history[model])
+    
+    def _get_quota_percentage(self, model: str) -> float:
+        """Get current quota usage percentage for a model."""
+        limit = self.MODEL_LIMITS.get(model, 100_000)
+        used = self._get_usage_in_window(model)
+        return (used / limit) * 100
+    
+    def _find_fallback_model(self, current_model: str) -> Optional[str]:
+        """Find a fallback model with available quota."""
+        for model in self.FALLBACK_ORDER:
+            if model != current_model and self._get_quota_percentage(model) < 80:
+                return model
+        return None
+    
+    def _check_duplicate(self, prompt: str, threshold: int = 3, window: int = 60) -> bool:
+        """Check if prompt has been seen threshold times in window seconds."""
+        current_time = time.time()
+        cutoff = current_time - window
+        
+        self._prompt_history = [(p, t) for p, t in self._prompt_history if t > cutoff]
+        count = sum(1 for p, _ in self._prompt_history if p == prompt)
+        return count >= threshold
+    
+    def _add_prompt_to_history(self, prompt: str):
+        """Add prompt to history for duplicate detection."""
+        self._prompt_history.append((prompt, time.time()))
+    
+    def check(self, prompt: str, model: str) -> Decision:
+        """Check if request should proceed, wait, fallback, or block."""
+        estimated_tokens = self._estimate_tokens(prompt)
+        quota_pct = self._get_quota_percentage(model)
+        
+        if self._check_duplicate(prompt):
+            return Decision(
+                action="block",
+                estimated_tokens=estimated_tokens,
+                reason="Duplicate prompt detected (3+ times in 60s)"
+            )
+        
+        if model in self._rate_limit_info:
+            info = self._rate_limit_info[model]
+            if info["last_429"] and time.time() - info["last_429"] < info["retry_after"]:
+                wait_time = info["retry_after"] - (time.time() - info["last_429"])
+                return Decision(
+                    action="wait",
+                    estimated_tokens=estimated_tokens,
+                    wait_seconds=max(0, wait_time),
+                    reason=f"Rate limited, retry after {wait_time:.1f}s"
+                )
+        
+        if quota_pct > 95:
+            return Decision(
+                action="block",
+                estimated_tokens=estimated_tokens,
+                reason=f"Quota exceeded: {quota_pct:.1f}% used"
+            )
+        
+        if quota_pct > 80:
+            fallback = self._find_fallback_model(model)
+            if fallback:
+                return Decision(
+                    action="fallback",
+                    estimated_tokens=estimated_tokens,
+                    fallback_model=fallback,
+                    reason=f"High quota usage ({quota_pct:.1f}%), fallback to {fallback}"
+                )
+            else:
+                wait_time = max(1, (quota_pct - 80) * 0.5)
+                return Decision(
+                    action="wait",
+                    estimated_tokens=estimated_tokens,
+                    wait_seconds=wait_time,
+                    reason=f"High quota usage ({quota_pct:.1f}%), wait {wait_time:.1f}s"
+                )
+        
+        if prompt in self._response_cache:
+            cached = self._response_cache[prompt]
+            if time.time() - cached["timestamp"] < 300:
+                return Decision(
+                    action="proceed",
+                    estimated_tokens=estimated_tokens,
+                    reason=f"Cached response available"
+                )
+        
+        self._add_prompt_to_history(prompt)
+        return Decision(
+            action="proceed",
+            estimated_tokens=estimated_tokens,
+            reason="OK"
+        )
+    
+    def record_usage(self, tokens: int, model: str):
+        """Record token usage for a model."""
+        self._usage_history[model].append((time.time(), tokens))
+    
+    def cache_response(self, prompt: str, response: str):
+        """Cache a response for future use."""
+        self._response_cache[prompt] = {
+            "response": response,
+            "timestamp": time.time()
+        }
+    
+    def record_429(self, model: str, retry_delay: float):
+        """Parse 429 error and record rate limit info."""
+        self._rate_limit_info[model] = {
+            "retry_after": retry_delay,
+            "last_429": time.time()
+        }
+    
+    def status(self) -> dict:
+        """Return status dict with models and stats info."""
+        models_status = {}
+        for model in self.MODEL_LIMITS:
+            used = self._get_usage_in_window(model)
+            limit = self.MODEL_LIMITS[model]
+            models_status[model] = {
+                "tokens_used": used,
+                "limit": limit,
+                "percentage": round((used / limit) * 100, 2),
+                "status": "blocked" if (used / limit) > 0.95 else "throttled" if (used / limit) > 0.8 else "ok"
+            }
+        
+        return {
+            "models": models_status,
+            "stats": {
+                "cached_responses": len(self._response_cache),
+                "tracked_prompts": len(self._prompt_history),
+                "rate_limited_models": len([m for m in self._rate_limit_info if self._rate_limit_info[m]["last_429"]])
+            }
+        }
+EOF
+
+[OUTPUT]:
+[Command completed successfully with no output]
+
+--- Turn 7/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/scripts/token_guard.py | head -50
+```
+
+[EXECUTING bash]:
+cat /workspace/scripts/token_guard.py | head -50
+
+[OUTPUT]:
+"""TokenGuard - LLM API 429 Prevention Engine"""
+
+import time
+import re
+from collections import defaultdict
+from dataclasses import dataclass, field
+from typing import Optional
+
+
+@dataclass
+class Decision:
+    action: str  # proceed, wait, fallback, block
+    estimated_tokens: int
+    wait_seconds: float = 0
+    fallback_model: Optional[str] = None
+    reason: str = ""
+
+
+class TokenGuard:
+    """TokenGuard engine for LLM rate limiting and quota management."""
+    
+    # Model TPM (tokens per minute) limits
+    MODEL_LIMITS = {
+        "gemini-3-flash": 1_000_000,
+        "gemini-3-pro": 2_000_000,
+        "claude-haiku": 50_000,
+        "claude-sonnet": 200_000,
+        "claude-opus": 200_000,
+        "gpt-4o": 800_000,
+        "deepseek": 1_000_000,
+    }
+    
+    # Fallback hierarchy (fallback to models with higher limits)
+    FALLBACK_ORDER = ["deepseek", "gemini-3-flash", "gemini-3-pro", "gpt-4o", "claude-opus", "claude-sonnet", "claude-haiku"]
+    
+    def __init__(self):
+        self._usage_history: dict[str, list[tuple[float, int]]] = defaultdict(list)
+        self._response_cache: dict[str, dict] = {}
+        self._prompt_history: list[tuple[str, float]] = []
+        self._rate_limit_info: dict[str, dict] = {}
+    
+    def _estimate_tokens(self, text: str) -> int:
+        """CJK-aware token estimation. CJK chars count more than ASCII."""
+        cjk_pattern = re.compile(r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]')
+        cjk_chars = len(cjk_pattern.findall(text))
+        ascii_chars = len(text) - cjk_chars
+        
+        cjk_tokens = int(cjk_chars * 1.5)
+        ascii_tokens = max(1, ascii_chars // 4) if ascii_chars > 0 else 0
+        
+
+
+--- Turn 8/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+python3 -c "
+from scripts.token_guard import TokenGuard, Decision
+
+tg = TokenGuard()
+
+# Test basic check
+prompt = 'Hello, how are you?'
+decision = tg.check(prompt, 'gpt-4o')
+print(f'Check result: action={decision.action}, tokens={decision.estimated_tokens}, reason={decision.reason}')
+
+# Test CJK token estimation
+cjk_prompt = '你好世界。这是一个测试。'
+decision = tg.check(cjk_prompt, 'gpt-4o')
+print(f'CJK check: tokens={decision.estimated_tokens}')
+
+# Test record_usage
+tg.record_usage(100, 'gpt-4o')
+print(f'Usage recorded')
+
+# Test cache_response
+tg.cache_response(prompt, 'Response text')
+decision = tg.check(prompt, 'gpt-4o')
+print(f'Cached check: reason={decision.reason}')
+
+# Test record_429
+tg.record_429('gpt-4o', 30)
+decision = tg.check('new prompt', 'gpt-4o')
+print(f'After 429: action={decision.action}, wait={decision.wait_seconds}')
+
+# Test status
+status = tg.status()
+print(f'Status: {status[\"stats\"]}')
+
+# Test duplicate detection
+for i in range(4):
+    decision = tg.check('duplica...
+
+[EXECUTING bash]:
+python3 -c "
+from scripts.token_guard import TokenGuard, Decision
+
+tg = TokenGuard()
+
+# Test basic check
+prompt = 'Hello, how are you?'
+decision = tg.check(prompt, 'gpt-4o')
+print(f'Check result: action={decision.action}, tokens={decision.estimated_tokens}, reason={decision.reason}')
+
+# Test CJK token estimation
+cjk_prompt = '你好世界。这是一个测试。'
+decision = tg.check(cjk_prompt, 'gpt-4o')
+print(f'CJK check: tokens={decision.estimated_tokens}')
+
+# Test record_usage
+tg.record_usage(100, 'gpt-4o')
+print(f'Usage recorded')
+
+# Test cache_response
+tg.cache_response(prompt, 'Response text')
+decision = tg.check(prompt, 'gpt-4o')
+print(f'Cached check: reason={decision.reason}')
+
+# Test record_429
+tg.record_429('gpt-4o', 30)
+decision = tg.check('new prompt', 'gpt-4o')
+print(f'After 429: action={decision.action}, wait={decision.wait_seconds}')
+
+# Test status
+status = tg.status()
+print(f'Status: {status[\"stats\"]}')
+
+# Test duplicate detection
+for i in range(4):
+    decision = tg.check('duplicate prompt test', 'gpt-4o')
+    print(f'Duplicate {i+1}: action={decision.action}')
+
+print('All tests passed!')
+"
+
+[OUTPUT]:
+Check result: action=proceed, tokens=4, reason=OK
+CJK check: tokens=16
+Usage recorded
+Cached check: reason=Cached response available
+After 429: action=wait, wait=29.999982833862305
+Status: {'cached_responses': 1, 'tracked_prompts': 2, 'rate_limited_models': 1}
+Duplicate 1: action=wait
+Duplicate 2: action=wait
+Duplicate 3: action=wait
+Duplicate 4: action=wait
+All tests passed!
+
+
+--- Turn 9/25 ---
+
+[ASSISTANT]:
+
+
+The duplicate detection test didn't work properly because the 429 wait was triggered first. Let me fix the check order so duplicate detection happens before 429 check:
+
+```bash
+cat > /workspace/scripts/token_guard.py << 'EOF'
+"""TokenGuard - LLM API 429 Prevention Engine"""
+
+import time
+import re
+from collections import defaultdict
+from dataclasses import dataclass
+from typing import Optional
+
+
+@dataclass
+class Decision:
+    action: str  # proceed, wait, fallback, block
+    estimated_tokens: int
+    wait_seconds: float = 0
+    fallback_model: Optional[str] = None
+    reason: str = ""
+
+
+class TokenGuard:
+    """TokenGuard engine for LLM rate limiting and quota management."""
+    
+    MODEL_LIMITS = {
+        "gemini-3-flash": 1_000_000,
+        "gemini-3-pro": 2_000_000,
+        "claude-haiku": 50_000,
+        "claude-sonnet": 200_000,
+        "claude-opus": 200_000,
+        "gpt-4o": 800_000,
+        "deepseek": 1_000_000,
+    }
+    
+    FALLBACK_ORDER = ["deepseek", "gemini-3-flash"...
+
+--- Turn 10/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat > /workspace/scripts/token_guard.py << 'ENDOFFILE'
+"""TokenGuard - LLM API 429 Prevention Engine"""
+
+import time
+import re
+from collections import defaultdict
+from dataclasses import dataclass
+from typing import Optional
+
+
+@dataclass
+class Decision:
+    action: str  # proceed, wait, fallback, block
+    estimated_tokens: int
+    wait_seconds: float = 0
+    fallback_model: Optional[str] = None
+    reason: str = ""
+
+
+class TokenGuard:
+    """TokenGuard engine for LLM rate limiting and quota management."""
+    
+    MODEL_LIMITS = {
+        "gemini-3-flash": 1_000_000,
+        "gemini-3-pro": 2_000_000,
+        "claude-haiku": 50_000,
+        "claude-sonnet": 200_000,
+        "claude-opus": 200_000,
+        "gpt-4o": 800_000,
+        "deepseek": 1_000_000,
+    }
+    
+    FALLBACK_ORDER = ["deepseek", "gemini-3-flash", "gemini-3-pro", "gpt-4o", "claude-opus", "claude-sonnet", "claude-haiku"]
+    
+    def __init__(self):
+        self._usage_history: dict[str, list[tuple[float, i...
+
+--- Turn 11/25 ---
+
+[ASSISTANT]:
+
+
+```python
+content = '''"""TokenGuard - LLM API 429 Prevention Engine"""
+
+import time
+import re
+from collections import defaultdict
+from dataclasses import dataclass
+from typing import Optional
+
+
+@dataclass
+class Decision:
+    action: str  # proceed, wait, fallback, block
+    estimated_tokens: int
+    wait_seconds: float = 0
+    fallback_model: Optional[str] = None
+    reason: str = ""
+
+
+class TokenGuard:
+    """TokenGuard engine for LLM rate limiting and quota management."""
+    
+    MODEL_LIMITS = {
+        "gemini-3-flash": 1_000_000,
+        "gemini-3-pro": 2_000_000,
+        "claude-haiku": 50_000,
+        "claude-sonnet": 200_000,
+        "claude-opus": 200_000,
+        "gpt-4o": 800_000,
+        "deepseek": 1_000_000,
+    }
+    
+    FALLBACK_ORDER = ["deepseek", "gemini-3-flash", "gemini-3-pro", "gpt-4o", "claude-opus", "claude-sonnet", "claude-haiku"]
+    
+    def __init__(self):
+        self._usage_history: dict[str, list[tuple[float, int]]] = defaultdict(list)
+        self._...
+
+--- Turn 12/25 ---
+[API ERROR]: Error code: 400 - {'error': {'message': "You passed 14337 input tokens and requested 2048 output tokens. However, the model's context length is only 16384 tokens, resulting in a maximum input length of 14336 tokens. Please reduce the length of the input prompt. (parameter=input_tokens, value=14337)", 'type': 'BadRequestError', 'param': 'input_tokens', 'code': 400}}
+
+--- Turn 13/25 ---
+[API ERROR]: Error code: 400 - {'error': {'message': "You passed 14337 input tokens and requested 2048 output tokens. However, the model's context length is only 16384 tokens, resulting in a maximum input length of 14336 tokens. Please reduce the length of the input prompt. (parameter=input_tokens, value=14337)", 'type': 'BadRequestError', 'param': 'input_tokens', 'code': 400}}
+
+--- Turn 14/25 ---
+[API ERROR]: Error code: 400 - {'error': {'message': "You passed 14337 input tokens and requested 2048 output tokens. However, the model's context length is only 16384 tokens, resulting in a maximum input length of 14336 tokens. Please reduce the length of the input prompt. (parameter=input_tokens, value=14337)", 'type': 'BadRequestError', 'param': 'input_tokens', 'code': 400}}
+
+--- Turn 15/25 ---
+[API ERROR]: Error code: 400 - {'error': {'message': "You passed 14337 input tokens and requested 2048 output tokens. However, the model's context length is only 16384 tokens, resulting in a maximum input length of 14336 tokens. Please reduce the length of the input prompt. (parameter=input_tokens, value=14337)", 'type': 'BadRequestError', 'param': 'input_tokens', 'code': 400}}
+
+--- Turn 16/25 ---
+[API ERROR]: Error code: 400 - {'error': {'message': "You passed 14337 input tokens and requested 2048 output tokens. However, the model's context length is only 16384 tokens, resulting in a maximum input length of 14336 tokens. Please reduce the length of the input prompt. (parameter=input_tokens, value=14337)", 'type': 'BadRequestError', 'param': 'input_tokens', 'code': 400}}
+
+--- Turn 17/25 ---
+[API ERROR]: Error code: 400 - {'error': {'message': "You passed 14337 input tokens and requested 2048 output tokens. However, the model's context length is only 16384 tokens, resulting in a maximum input length of 14336 tokens. Please reduce the length of the input prompt. (parameter=input_tokens, value=14337)", 'type': 'BadRequestError', 'param': 'input_tokens', 'code': 400}}
+
+--- Turn 18/25 ---
+[API ERROR]: Error code: 400 - {'error': {'message': "You passed 14337 input tokens and requested 2048 output tokens. However, the model's context length is only 16384 tokens, resulting in a maximum input length of 14336 tokens. Please reduce the length of the input prompt. (parameter=input_tokens, value=14337)", 'type': 'BadRequestError', 'param': 'input_tokens', 'code': 400}}
+
+--- Turn 19/25 ---
+[API ERROR]: Error code: 400 - {'error': {'message': "You passed 14337 input tokens and requested 2048 output tokens. However, the model's context length is only 16384 tokens, resulting in a maximum input length of 14336 tokens. Please reduce the length of the input prompt. (parameter=input_tokens, value=14337)", 'type': 'BadRequestError', 'param': 'input_tokens', 'code': 400}}
+
+--- Turn 20/25 ---
+[API ERROR]: Error code: 400 - {'error': {'message': "You passed 14337 input tokens and requested 2048 output tokens. However, the model's context length is only 16384 tokens, resulting in a maximum input length of 14336 tokens. Please reduce the length of the input prompt. (parameter=input_tokens, value=14337)", 'type': 'BadRequestError', 'param': 'input_tokens', 'code': 400}}
+
+--- Turn 21/25 ---
+[API ERROR]: Error code: 400 - {'error': {'message': "You passed 14337 input tokens and requested 2048 output tokens. However, the model's context length is only 16384 tokens, resulting in a maximum input length of 14336 tokens. Please reduce the length of the input prompt. (parameter=input_tokens, value=14337)", 'type': 'BadRequestError', 'param': 'input_tokens', 'code': 400}}
+
+--- Turn 22/25 ---
+[API ERROR]: Error code: 400 - {'error': {'message': "You passed 14337 input tokens and requested 2048 output tokens. However, the model's context length is only 16384 tokens, resulting in a maximum input length of 14336 tokens. Please reduce the length of the input prompt. (parameter=input_tokens, value=14337)", 'type': 'BadRequestError', 'param': 'input_tokens', 'code': 400}}
+
+--- Turn 23/25 ---
+[API ERROR]: Error code: 400 - {'error': {'message': "You passed 14337 input tokens and requested 2048 output tokens. However, the model's context length is only 16384 tokens, resulting in a maximum input length of 14336 tokens. Please reduce the length of the input prompt. (parameter=input_tokens, value=14337)", 'type': 'BadRequestError', 'param': 'input_tokens', 'code': 400}}
+
+--- Turn 24/25 ---
+[API ERROR]: Error code: 400 - {'error': {'message': "You passed 14337 input tokens and requested 2048 output tokens. However, the model's context length is only 16384 tokens, resulting in a maximum input length of 14336 tokens. Please reduce the length of the input prompt. (parameter=input_tokens, value=14337)", 'type': 'BadRequestError', 'param': 'input_tokens', 'code': 400}}
+
+--- Turn 25/25 ---
+[API ERROR]: Error code: 400 - {'error': {'message': "You passed 14337 input tokens and requested 2048 output tokens. However, the model's context length is only 16384 tokens, resulting in a maximum input length of 14336 tokens. Please reduce the length of the input prompt. (parameter=input_tokens, value=14337)", 'type': 'BadRequestError', 'param': 'input_tokens', 'code': 400}}
+
+⚠️ Agent reached max turns (25)
+
+Conversation saved to results/repair_run_Qwen3.5-27B_20260413_195548/edmonddantesj-token-guard_create_hard_005/conversation.json
+
+============================================================
+Running evaluation...
+============================================================
+
+Results for edmonddantesj-token-guard_create_hard_005:
+  Passed: False
+  Score:  0.88
+  Checks:
+    ✅ file_exists: scripts/token_guard.py exists
+    ✅ module_loads: Module imported successfully
+    ✅ has_tokenguard_class: TokenGuard class found
+    ✅ check_returns_valid_action: action=proceed
+    ✅ cjk_aware_estimation: ascii_tokens=25, cjk_tokens=150
+    ✅ duplicate_detection_blocks: actions over 4 identical calls: ['proceed', 'proceed', 'proceed', 'block']
+    ❌ status_output_structure: has_models=True, has_stats=True, has_usage_fields=False
+    ✅ record_429_and_cache_response_callable: record_429=True, cache_response=True
+
+Cleaning up container 7985859ba6af...
+Container removed.
+

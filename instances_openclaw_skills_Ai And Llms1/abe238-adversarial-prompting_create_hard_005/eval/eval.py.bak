@@ -1,0 +1,81 @@
+import json
+import re
+import sys
+from pathlib import Path
+
+
+def normalize(text: str) -> str:
+    text = text.lower()
+    text = re.sub(r'[^a-z0-9]+', ' ', text)
+    return re.sub(r'\s+', ' ', text).strip()
+
+
+def safe_read(path: Path):
+    try:
+        return path.read_text(encoding='utf-8')
+    except Exception as e:
+        return None, str(e)
+
+
+def main():
+    checks = []
+    workspace = Path(sys.argv[1])
+
+    # Check 1: expected markdown file exists
+    md_path = None
+    try:
+        candidates = list(workspace.glob('*.md')) + list(Path.home().glob('adversarial_analysis_*.md'))
+        md_path = candidates[0] if candidates else None
+        passed = md_path is not None and md_path.exists()
+        checks.append({
+            'name': 'markdown_output_exists',
+            'passed': passed,
+            'detail': f'found={md_path.name if md_path else None}'
+        })
+    except Exception as e:
+        checks.append({'name': 'markdown_output_exists', 'passed': False, 'detail': f'error: {e}'})
+
+    content = ''
+    if md_path is not None:
+        try:
+            content = md_path.read_text(encoding='utf-8')
+        except Exception as e:
+            content = ''
+            checks.append({'name': 'markdown_readable', 'passed': False, 'detail': f'error: {e}'})
+        else:
+            checks.append({'name': 'markdown_readable', 'passed': True, 'detail': 'read successfully'})
+    else:
+        checks.append({'name': 'markdown_readable', 'passed': False, 'detail': 'markdown file missing'})
+
+    norm = normalize(content)
+
+    expected_markers = [
+        ('three_approaches', ['solution generation', 'three', 'approaches']),
+        ('adversarial_critique', ['adversarial critique']),
+        ('fix_development', ['fix', 'mitigation']),
+        ('validation_check', ['validation']),
+        ('consolidation', ['consolidation']),
+        ('ranked_options', ['summary of options']),
+        ('final_recommendation', ['final recommendation']),
+        ('atlas_marker', ['atlas delta', '77'])
+    ]
+
+    passed_count = 0
+    for name, terms in expected_markers:
+        try:
+            ok = all(t in norm for t in terms)
+            checks.append({'name': name, 'passed': ok, 'detail': f'terms={terms}'})
+            if ok:
+                passed_count += 1
+        except Exception as e:
+            checks.append({'name': name, 'passed': False, 'detail': f'error: {e}'})
+
+    total = len(checks)
+    score = passed_count / total if total else 0.0
+    passed = total > 0 and passed_count == total
+
+    print(json.dumps({'passed': passed, 'score': score, 'checks': checks}))
+
+
+if __name__ == '__main__':
+    main()

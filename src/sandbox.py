@@ -74,6 +74,15 @@ class Sandbox:
                     capture_output=True,
                     text=True,
                 )
+            skill_context_dir = runtime_dir / "skill_context"
+            if skill_context_dir.exists() and any(skill_context_dir.iterdir()):
+                # 将其拷贝到容器的 /workspace/skill_context 目录下，方便 Agent 查阅
+                subprocess.run(
+                    ["docker", "cp", f"{skill_context_dir}/.", f"{container_id}:/workspace/skill_context/"],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
 
             # Copy and run gen_inputs.py
             gen_inputs = runtime_dir / "gen_inputs.py"

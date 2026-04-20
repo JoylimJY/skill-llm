@@ -1,0 +1,1294 @@
+Building Docker image...
+Creating new container...
+Container ready: ed45a97208af
+Workspace files: README_MARKER.txt
+assets
+config.json
+gen_inputs.py
+setup.sh
+state.json
+
+============================================================
+Starting agent interaction (Repair Mode)...
+============================================================
+
+============================================================
+TASK: You’re in a terminal inside the clawd-presence repo. Please turn the current presence display into a more polished “command deck” layout: keep the existing status/state behavior, but add a subtle bottom footer with the active script name and a small mode hint, and make the display automatically prefer a custom monogram if one exists for the configured letter. Also make sure the config tool can safely initialize the project from a fresh checkout without clobbering existing settings. I need the implementation to remain robust on small terminals and to preserve the current auto-idle behavior. Deliver the code changes only; don’t change the documented CLI usage.
+============================================================
+
+
+--- Turn 1/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+ls -la /workspace
+```
+
+[EXECUTING bash]:
+ls -la /workspace
+
+[OUTPUT]:
+total 20
+drwxr-xr-x 3 root  root   147 Apr 14 01:10 .
+drwxr-xr-x 1 root  root    31 Apr 14 01:10 ..
+-rw-r--r-- 1 root  root    33 Apr 14 01:10 README_MARKER.txt
+drwxr-xr-x 3 root  root    31 Apr 14 01:10 assets
+-rw-r--r-- 1 root  root    92 Apr 14 01:10 config.json
+-rw-r--r-- 1 32113 42021 1271 Apr 13 11:13 gen_inputs.py
+-rwxr-xr-x 1 32113 42021  139 Apr 13 11:13 setup.sh
+-rw-r--r-- 1 root  root   127 Apr 14 01:10 state.json
+
+
+--- Turn 2/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+find /workspace -type f -name "*.py" -o -name "*.json" -o -name "*.sh" | head -50
+```
+
+[EXECUTING bash]:
+find /workspace -type f -name "*.py" -o -name "*.json" -o -name "*.sh" | head -50
+
+[OUTPUT]:
+/workspace/gen_inputs.py
+/workspace/config.json
+/workspace/state.json
+/workspace/setup.sh
+
+
+--- Turn 3/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+ls -la /workspace/assets/
+```
+
+[EXECUTING bash]:
+ls -la /workspace/assets/
+
+[OUTPUT]:
+total 0
+drwxr-xr-x 3 root root  31 Apr 14 01:10 .
+drwxr-xr-x 3 root root 147 Apr 14 01:10 ..
+drwxr-xr-x 2 root root  61 Apr 14 01:10 monograms
+
+
+--- Turn 4/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+ls -la /workspace/assets/monograms/
+```
+
+[EXECUTING bash]:
+ls -la /workspace/assets/monograms/
+
+[OUTPUT]:
+total 12
+drwxr-xr-x 2 root root 61 Apr 14 01:10 .
+drwxr-xr-x 3 root root 31 Apr 14 01:10 ..
+-rw-r--r-- 1 root root 69 Apr 14 01:10 A.txt
+-rw-r--r-- 1 root root 69 Apr 14 01:10 M.txt
+-rw-r--r-- 1 root root 69 Apr 14 01:10 Z.txt
+
+
+--- Turn 5/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/config.json
+```
+
+[EXECUTING bash]:
+cat /workspace/config.json
+
+[OUTPUT]:
+{
+  "letter": "M",
+  "name": "DECK",
+  "idle_timeout": 123,
+  "marker": "CONFIG-MARKER-7"
+}
+
+
+--- Turn 6/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/state.json
+```
+
+[EXECUTING bash]:
+cat /workspace/state.json
+
+[OUTPUT]:
+{
+  "state": "think",
+  "message": "Reviewing command deck layout",
+  "updated": 1700000000.0,
+  "marker": "STATE-MARKER-11"
+}
+
+
+--- Turn 7/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/gen_inputs.py
+```
+
+[EXECUTING bash]:
+cat /workspace/gen_inputs.py
+
+[OUTPUT]:
+from pathlib import Path
+import json
+import random
+
+random.seed(1337)
+root = Path('.')
+assets = root / 'assets' / 'monograms'
+assets.mkdir(parents=True, exist_ok=True)
+
+# Deterministic marker files
+(root / 'README_MARKER.txt').write_text('MARKER:CLAWD-PRESENCE-INPUT-ROOT\n', encoding='utf-8')
+
+# Create a few deterministic monogram files with verifiable markers
+letters = ['A', 'M', 'Z']
+for idx, letter in enumerate(letters):
+    lines = [
+        f'MARKER-MONO-{letter}-TOP',
+        f'  {letter}{letter}{letter}  ',
+        f' {letter}   {letter} ',
+        f'{letter}{letter}{letter}{letter}{letter}',
+        f'  {letter} {letter}  ',
+        f'MARKER-MONO-{letter}-BOTTOM',
+    ]
+    (assets / f'{letter}.txt').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+
+# Seeded reference config/state used by the eval to verify behavior
+config = {
+    'letter': 'M',
+    'name': 'DECK',
+    'idle_timeout': 123,
+    'marker': 'CONFIG-MARKER-7',
+}
+state = {
+    'state': 'think',
+    'message': 'Reviewing command deck layout',
+    'updated': 1700000000.0,
+    'marker': 'STATE-MARKER-11',
+}
+(root / 'config.json').write_text(json.dumps(config, indent=2) + '\n', encoding='utf-8')
+(root / 'state.json').write_text(json.dumps(state, indent=2) + '\n', encoding='utf-8')
+
+
+--- Turn 8/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/setup.sh
+```
+
+[EXECUTING bash]:
+cat /workspace/setup.sh
+
+[OUTPUT]:
+#!/usr/bin/env bash
+set -euo pipefail
+chmod +x scripts/configure.py scripts/display.py scripts/status.py || true
+mkdir -p assets/monograms
+
+
+--- Turn 9/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+ls -la /workspace/scripts/ 2>/dev/null || echo "scripts directory not found"
+```
+
+[EXECUTING bash]:
+ls -la /workspace/scripts/ 2>/dev/null || echo "scripts directory not found"
+
+[OUTPUT]:
+scripts directory not found
+
+
+--- Turn 10/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/README_MARKER.txt
+```
+
+[EXECUTING bash]:
+cat /workspace/README_MARKER.txt
+
+[OUTPUT]:
+MARKER:CLAWD-PRESENCE-INPUT-ROOT
+
+
+--- Turn 11/25 ---
+
+[ASSISTANT]:
+
+
+Now I understand the structure. This is the clawd-presence repo with a setup script that references scripts that need to be created. I need to create:
+1. `scripts/configure.py` - config tool that safely initializes without clobbering
+2. `scripts/display.py` - main display with polished "command deck" layout
+3. `scripts/status.py` - status management with auto-idle behavior
+
+Let me create these scripts:
+
+```bash
+mkdir -p /workspace/scripts
+```
+
+[EXECUTING bash]:
+mkdir -p /workspace/scripts
+
+[OUTPUT]:
+[Command completed successfully with no output]
+
+--- Turn 12/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat > /workspace/scripts/configure.py << 'EOF'
+#!/usr/bin/env python3
+"""
+clawd-presence configure tool
+
+Safely initializes the project from a fresh checkout without clobbering existing settings.
+"""
+
+import json
+import argparse
+from pathlib import Path
+
+CONFIG_FILE = Path('config.json')
+DEFAULT_CONFIG = {
+    'letter': 'A',
+    'name': 'PRESENCE',
+    'idle_timeout': 300,
+    'marker': 'CONFIG-MARKER-1',
+}
+
+
+def load_config():
+    """Load existing config if present."""
+    if CONFIG_FILE.exists():
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return None
+    return None
+
+
+def save_config(config):
+    """Save config to file."""
+    with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+        json.dump(config, f, indent=2)
+        f.write('\n')
+
+
+def init(args):
+    """Initialize config from a fresh checkout, preserving existing settings."""
+    existin...
+
+[EXECUTING bash]:
+cat > /workspace/scripts/configure.py << 'EOF'
+#!/usr/bin/env python3
+"""
+clawd-presence configure tool
+
+Safely initializes the project from a fresh checkout without clobbering existing settings.
+"""
+
+import json
+import argparse
+from pathlib import Path
+
+CONFIG_FILE = Path('config.json')
+DEFAULT_CONFIG = {
+    'letter': 'A',
+    'name': 'PRESENCE',
+    'idle_timeout': 300,
+    'marker': 'CONFIG-MARKER-1',
+}
+
+
+def load_config():
+    """Load existing config if present."""
+    if CONFIG_FILE.exists():
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return None
+    return None
+
+
+def save_config(config):
+    """Save config to file."""
+    with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+        json.dump(config, f, indent=2)
+        f.write('\n')
+
+
+def init(args):
+    """Initialize config from a fresh checkout, preserving existing settings."""
+    existing = load_config()
+    
+    if existing is not None:
+        # Config already exists - only update if explicitly requested
+        if args.force:
+            print("Force flag set, overwriting existing config...")
+        else:
+            print("Config already exists. Use --force to overwrite.")
+            return
+    
+    # Fresh initialization
+    config = DEFAULT_CONFIG.copy()
+    
+    if args.letter:
+        config['letter'] = args.letter.upper()
+    if args.name:
+        config['name'] = args.name
+    if args.timeout is not None:
+        config['idle_timeout'] = args.timeout
+    
+    save_config(config)
+    print(f"Initialized config: {config}")
+
+
+def show(args):
+    """Display current configuration."""
+    config = load_config()
+    if config is None:
+        print("No config found. Run with --init to create one.")
+        return
+    print(json.dumps(config, indent=2))
+
+
+def update(args):
+    """Update specific config values without clobbering others."""
+    config = load_config()
+    
+    if config is None:
+        config = DEFAULT_CONFIG.copy()
+    
+    if args.letter:
+        config['letter'] = args.letter.upper()
+    if args.name:
+        config['name'] = args.name
+    if args.timeout is not None:
+        config['idle_timeout'] = args.timeout
+    
+    save_config(config)
+    print(f"Updated config: {config}")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='clawd-presence configuration tool'
+    )
+    subparsers = parser.add_subparsers(dest='command', help='Commands')
+    
+    # init subcommand
+    init_parser = subparsers.add_parser('init', help='Initialize config')
+    init_parser.add_argument('--letter', '-l', help='Initial letter')
+    init_parser.add_argument('--name', '-n', help='Initial name')
+    init_parser.add_argument('--timeout', '-t', type=int, help='Idle timeout in seconds')
+    init_parser.add_argument('--force', action='store_true', help='Overwrite existing config')
+    init_parser.set_defaults(func=init)
+    
+    # show subcommand
+    show_parser = subparsers.add_parser('show', help='Show current config')
+    show_parser.set_defaults(func=show)
+    
+    # update subcommand
+    update_parser = subparsers.add_parser('update', help='Update config values')
+    update_parser.add_argument('--letter', '-l', help='New letter')
+    update_parser.add_argument('--name', '-n', help='New name')
+    update_parser.add_argument('--timeout', '-t', type=int, help='New idle timeout')
+    update_parser.set_defaults(func=update)
+    
+    args = parser.parse_args()
+    
+    if args.command is None:
+        parser.print_help()
+        return
+    
+    args.func(args)
+
+
+if __name__ == '__main__':
+    main()
+EOF
+chmod +x /workspace/scripts/configure.py
+
+[OUTPUT]:
+[Command completed successfully with no output]
+
+--- Turn 13/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat > /workspace/scripts/display.py << 'EOF'
+#!/usr/bin/env python3
+"""
+clawd-presence display - Command Deck Layout
+
+A polished terminal display with:
+- Status/state behavior
+- Bottom footer with active script name and mode hint
+- Custom monogram support
+- Auto-idle behavior
+- Small terminal friendly
+"""
+
+import json
+import time
+import sys
+import os
+import signal
+import argparse
+from pathlib import Path
+from datetime import datetime
+
+CONFIG_FILE = Path('config.json')
+STATE_FILE = Path('state.json')
+MONOGRAMS_DIR = Path('assets/monograms')
+
+
+class PresenceDisplay:
+    def __init__(self, script_name='display', mode='live'):
+        self.script_name = script_name
+        self.mode = mode
+        self.config = self._load_config()
+        self.state = self._load_state()
+        self.running = True
+        self.idle_start = time.time()
+        
+        # Setup signal handlers for clean exit
+        signal.signal(signal.SIGINT, self._handle_signal)
+        signal.signal(signal.SIGT...
+
+--- Turn 14/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat > /workspace/scripts/display.py << 'EOF'
+#!/usr/bin/env python3
+"""
+clawd-presence display - Command Deck Layout
+
+A polished terminal display with:
+- Status/state behavior
+- Bottom footer with active script name and mode hint
+- Custom monogram support
+- Auto-idle behavior
+- Small terminal friendly
+"""
+
+import json
+import time
+import sys
+import os
+import signal
+import argparse
+from pathlib import Path
+from datetime import datetime
+
+CONFIG_FILE = Path('config.json')
+STATE_FILE = Path('state.json')
+MONOGRAMS_DIR = Path('assets/monograms')
+
+
+class PresenceDisplay:
+    def __init__(self, script_name='display', mode='live'):
+        self.script_name = script_name
+        self.mode = mode
+        self.config = self._load_config()
+        self.state = self._load_state()
+        self.running = True
+        self.idle_start = time.time()
+        
+        signal.signal(signal.SIGINT, self._handle_signal)
+        signal.signal(signal.SIGTERM, self._handle_signal)
+    
+    def _load_co...
+
+[EXECUTING bash]:
+cat > /workspace/scripts/display.py << 'EOF'
+#!/usr/bin/env python3
+"""
+clawd-presence display - Command Deck Layout
+
+A polished terminal display with:
+- Status/state behavior
+- Bottom footer with active script name and mode hint
+- Custom monogram support
+- Auto-idle behavior
+- Small terminal friendly
+"""
+
+import json
+import time
+import sys
+import os
+import signal
+import argparse
+from pathlib import Path
+from datetime import datetime
+
+CONFIG_FILE = Path('config.json')
+STATE_FILE = Path('state.json')
+MONOGRAMS_DIR = Path('assets/monograms')
+
+
+class PresenceDisplay:
+    def __init__(self, script_name='display', mode='live'):
+        self.script_name = script_name
+        self.mode = mode
+        self.config = self._load_config()
+        self.state = self._load_state()
+        self.running = True
+        self.idle_start = time.time()
+        
+        signal.signal(signal.SIGINT, self._handle_signal)
+        signal.signal(signal.SIGTERM, self._handle_signal)
+    
+    def _load_config(self):
+        if CONFIG_FILE.exists():
+            try:
+                with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, IOError):
+                pass
+        return {
+            'letter': 'A',
+            'name': 'PRESENCE',
+            'idle_timeout': 300,
+        }
+    
+    def _load_state(self):
+        if STATE_FILE.exists():
+            try:
+                with open(STATE_FILE, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, IOError):
+                pass
+        return {
+            'state': 'idle',
+            'message': 'Ready',
+            'updated': time.time(),
+        }
+    
+    def _get_monogram(self, letter):
+        """Get monogram for letter, preferring custom if available."""
+        letter = letter.upper()
+        monogram_file = MONOGRAMS_DIR / f'{letter}.txt'
+        
+        if monogram_file.exists():
+            try:
+                return monogram_file.read_text(encoding='utf-8').rstrip('\n')
+            except IOError:
+                pass
+        
+        return f"  {letter}  "
+    
+    def _check_idle(self):
+        """Check if we should transition to idle state."""
+        idle_timeout = self.config.get('idle_timeout', 300)
+        elapsed = time.time() - self.idle_start
+        
+        if elapsed > idle_timeout:
+            self.state['state'] = 'idle'
+            self.state['message'] = 'Auto-idle timeout'
+            self.state['updated'] = time.time()
+            self._save_state()
+            return True
+        return False
+    
+    def _save_state(self):
+        with open(STATE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(self.state, f, indent=2)
+            f.write('\n')
+    
+    def _handle_signal(self, signum, frame):
+        self.running = False
+    
+    def _get_terminal_size(self):
+        try:
+            size = os.get_terminal_size()
+            return max(size.columns, 40), max(size.lines, 12)
+        except OSError:
+            return 80, 24
+    
+    def _wrap_text(self, text, width):
+        words = text.split()
+        lines = []
+        current = []
+        current_len = 0
+        
+        for word in words:
+            if current_len + len(word) + (1 if current else 0) <= width:
+                current.append(word)
+                current_len += len(word) + (1 if current else 0)
+            else:
+                if current:
+                    lines.append(' '.join(current))
+                current = [word]
+                current_len = len(word)
+        
+        if current:
+            lines.append(' '.join(current))
+        
+        return lines if lines else ['']
+    
+    def _build_display(self):
+        cols, rows = self._get_terminal_size()
+        self._check_idle()
+        
+        letter = self.config.get('letter', 'A')
+        name = self.config.get('name', 'PRESENCE')
+        monogram = self._get_monogram(letter)
+        
+        current_state = self.state.get('state', 'idle')
+        message = self.state.get('message', '')
+        updated = self.state.get('updated', time.time())
+        
+        lines = []
+        
+        # Header spacer
+        lines.append('')
+        
+        # Monogram section (centered)
+        monogram_lines = monogram.split('\n')
+        mono_width = max(len(line) for line in monogram_lines) if monogram_lines else 6
+        
+        for mono_line in monogram_lines:
+            padding = (cols - mono_width) // 2
+            lines.append(' ' * padding + mono_line)
+        
+        lines.append('')
+        
+        # Status bar with name
+        status_bar = f"[{current_state.upper()}]"
+        center_content = f"{status_bar} {name} "
+        center_pad = (cols - len(center_content)) // 2
+        lines.append(' ' * center_pad + center_content)
+        lines.append('')
+        
+        # Message section
+        if message:
+            wrap_width = max(40, cols - 4)
+            wrapped = self._wrap_text(message, wrap_width)
+            for line in wrapped:
+                lines.append('  ' + line)
+        lines.append('')
+        
+        # Timestamp
+        ts = datetime.fromtimestamp(updated).strftime('%H:%M:%S')
+        lines.append(f"  Updated: {ts}")
+        lines.append('')
+        
+        # Footer - subtle bottom footer with script name and mode hint
+        footer_content = f"{self.script_name} | {self.mode}"
+        footer_len = len(footer_content)
+        footer_pad = (cols - footer_len) // 2
+        lines.append('─' * footer_len)
+        lines.append(' ' * footer_pad + footer_content)
+        lines.append('─' * footer_len)
+        lines.append('')
+        
+        return '\n'.join(lines)
+    
+    def display(self, once=False):
+        self.idle_start = time.time()
+        
+        if once:
+            print(self._build_display())
+            return
+        
+        while self.running:
+            try:
+                sys.stdout.write('\033[2J\033[H')
+                sys.stdout.write(self._build_display())
+                sys.stdout.flush()
+                time.sleep(0.5)
+            except (BrokenPipeError, IOError):
+                break
+    
+    def update_state(self, state=None, message=None):
+        if state is not None:
+            self.state['state'] = state
+        if message is not None:
+            self.state['message'] = message
+        self.state['updated'] = time.time()
+        self._save_state()
+        self.idle_start = time.time()
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='clawd-presence command deck display'
+    )
+    parser.add_argument('--once', '-o', action='store_true',
+                        help='Display once and exit')
+    parser.add_argument('--state', '-s',
+                        help='Set current state')
+    parser.add_argument('--message', '-m',
+                        help='Set current message')
+    parser.add_argument('--script-name', default='display',
+                        help='Script name for footer')
+    parser.add_argument('--mode', default='live',
+                        help='Mode hint for footer')
+    
+    args = parser.parse_args()
+    
+    display = PresenceDisplay(
+        script_name=args.script_name,
+        mode=args.mode
+    )
+    
+    if args.state or args.message:
+        display.update_state(
+            state=args.state,
+            message=args.message
+        )
+    
+    if args.once:
+        display.display(once=True)
+    else:
+        display.display()
+
+
+if __name__ == '__main__':
+    main()
+EOF
+chmod +x /workspace/scripts/display.py
+
+[OUTPUT]:
+[Command completed successfully with no output]
+
+--- Turn 15/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat > /workspace/scripts/status.py << 'EOF'
+#!/usr/bin/env python3
+"""
+clawd-presence status - Status management with auto-idle behavior
+
+Manages presence state and handles automatic idle transitions.
+"""
+
+import json
+import time
+import sys
+import argparse
+from pathlib import Path
+
+CONFIG_FILE = Path('config.json')
+STATE_FILE = Path('state.json')
+
+
+def load_config():
+    """Load configuration, return defaults if not found."""
+    if CONFIG_FILE.exists():
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            pass
+    return {
+        'letter': 'A',
+        'name': 'PRESENCE',
+        'idle_timeout': 300,
+    }
+
+
+def load_state():
+    """Load state, return defaults if not found."""
+    if STATE_FILE.exists():
+        try:
+            with open(STATE_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOEr...
+
+[EXECUTING bash]:
+cat > /workspace/scripts/status.py << 'EOF'
+#!/usr/bin/env python3
+"""
+clawd-presence status - Status management with auto-idle behavior
+
+Manages presence state and handles automatic idle transitions.
+"""
+
+import json
+import time
+import sys
+import argparse
+from pathlib import Path
+
+CONFIG_FILE = Path('config.json')
+STATE_FILE = Path('state.json')
+
+
+def load_config():
+    """Load configuration, return defaults if not found."""
+    if CONFIG_FILE.exists():
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            pass
+    return {
+        'letter': 'A',
+        'name': 'PRESENCE',
+        'idle_timeout': 300,
+    }
+
+
+def load_state():
+    """Load state, return defaults if not found."""
+    if STATE_FILE.exists():
+        try:
+            with open(STATE_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            pass
+    return {
+        'state': 'idle',
+        'message': 'Ready',
+        'updated': time.time(),
+    }
+
+
+def save_state(state):
+    """Save state to file."""
+    with open(STATE_FILE, 'w', encoding='utf-8') as f:
+        json.dump(state, f, indent=2)
+        f.write('\n')
+
+
+def check_auto_idle():
+    """Check and apply auto-idle behavior based on config timeout."""
+    config = load_config()
+    state = load_state()
+    
+    idle_timeout = config.get('idle_timeout', 300)
+    last_updated = state.get('updated', time.time())
+    elapsed = time.time() - last_updated
+    
+    if elapsed > idle_timeout:
+        state['state'] = 'idle'
+        state['message'] = 'Auto-idle timeout'
+        state['updated'] = time.time()
+        save_state(state)
+        return True
+    return False
+
+
+def set_status(state=None, message=None):
+    """Set the current status."""
+    config = load_config()
+    current_state = load_state()
+    
+    if state is not None:
+        current_state['state'] = state
+    if message is not None:
+        current_state['message'] = message
+    
+    current_state['updated'] = time.time()
+    save_state(current_state)
+    
+    print(f"Status updated: {current_state}")
+
+
+def get_status():
+    """Get current status."""
+    check_auto_idle()
+    state = load_state()
+    print(json.dumps(state, indent=2))
+
+
+def show_config():
+    """Show current configuration."""
+    config = load_config()
+    print(json.dumps(config, indent=2))
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='clawd-presence status management'
+    )
+    subparsers = parser.add_subparsers(dest='command', help='Commands')
+    
+    # set subcommand
+    set_parser = subparsers.add_parser('set', help='Set status')
+    set_parser.add_argument('--state', '-s',
+                            help='Set state (e.g., active, think, idle)')
+    set_parser.add_argument('--message', '-m',
+                            help='Set message')
+    set_parser.set_defaults(func=set_status)
+    
+    # get subcommand
+    get_parser = subparsers.add_parser('get', help='Get current status')
+    get_parser.set_defaults(func=get_status)
+    
+    # config subcommand
+    config_parser = subparsers.add_parser('config', help='Show configuration')
+    config_parser.set_defaults(func=show_config)
+    
+    # idle subcommand
+    idle_parser = subparsers.add_parser('idle', help='Check and apply auto-idle')
+    idle_parser.set_defaults(func=check_auto_idle)
+    
+    args = parser.parse_args()
+    
+    if args.command is None:
+        parser.print_help()
+        return
+    
+    if args.command == 'set':
+        args.func(state=args.state, message=args.message)
+    elif args.command == 'idle':
+        changed = args.func()
+        if changed:
+            print("Status changed to idle due to timeout.")
+        else:
+            print("Status unchanged, within timeout period.")
+    else:
+        args.func()
+
+
+if __name__ == '__main__':
+    main()
+EOF
+chmod +x /workspace/scripts/status.py
+
+[OUTPUT]:
+[Command completed successfully with no output]
+
+--- Turn 16/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cd /workspace && python3 scripts/configure.py --help
+```
+
+[EXECUTING bash]:
+cd /workspace && python3 scripts/configure.py --help
+
+[OUTPUT]:
+usage: configure.py [-h] {init,show,update} ...
+
+clawd-presence configuration tool
+
+positional arguments:
+  {init,show,update}  Commands
+    init              Initialize config
+    show              Show current config
+    update            Update config values
+
+options:
+  -h, --help          show this help message and exit
+
+
+--- Turn 17/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cd /workspace && python3 scripts/display.py --once
+```
+
+[EXECUTING bash]:
+cd /workspace && python3 scripts/display.py --once
+
+[OUTPUT]:
+
+                              MARKER-MONO-M-TOP
+                                MMM  
+                               M   M 
+                              MMMMM
+                                M M  
+                              MARKER-MONO-M-BOTTOM
+
+                                 [THINK] DECK 
+
+  Reviewing command deck layout
+
+  Updated: 22:13:20
+
+──────────────
+                                 display | live
+──────────────
+
+
+
+--- Turn 18/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cd /workspace && python3 scripts/configure.py init --help
+```
+
+[EXECUTING bash]:
+cd /workspace && python3 scripts/configure.py init --help
+
+[OUTPUT]:
+usage: configure.py init [-h] [--letter LETTER] [--name NAME]
+                         [--timeout TIMEOUT] [--force]
+
+options:
+  -h, --help            show this help message and exit
+  --letter LETTER, -l LETTER
+                        Initial letter
+  --name NAME, -n NAME  Initial name
+  --timeout TIMEOUT, -t TIMEOUT
+                        Idle timeout in seconds
+  --force               Overwrite existing config
+
+
+--- Turn 19/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cd /workspace && python3 scripts/configure.py init --letter X --name TEST
+```
+
+[EXECUTING bash]:
+cd /workspace && python3 scripts/configure.py init --letter X --name TEST
+
+[OUTPUT]:
+Config already exists. Use --force to overwrite.
+
+
+--- Turn 20/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cd /workspace && python3 scripts/status.py --help
+```
+
+[EXECUTING bash]:
+cd /workspace && python3 scripts/status.py --help
+
+[OUTPUT]:
+usage: status.py [-h] {set,get,config,idle} ...
+
+clawd-presence status management
+
+positional arguments:
+  {set,get,config,idle}
+                        Commands
+    set                 Set status
+    get                 Get current status
+    config              Show configuration
+    idle                Check and apply auto-idle
+
+options:
+  -h, --help            show this help message and exit
+
+
+--- Turn 21/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cd /workspace && python3 scripts/status.py set --state active --message "Testing command deck"
+```
+
+[EXECUTING bash]:
+cd /workspace && python3 scripts/status.py set --state active --message "Testing command deck"
+
+[OUTPUT]:
+Status updated: {'state': 'active', 'message': 'Testing command deck', 'updated': 1776129131.2248614, 'marker': 'STATE-MARKER-11'}
+
+
+--- Turn 22/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cd /workspace && python3 scripts/display.py --once
+```
+
+[EXECUTING bash]:
+cd /workspace && python3 scripts/display.py --once
+
+[OUTPUT]:
+
+                              MARKER-MONO-M-TOP
+                                MMM  
+                               M   M 
+                              MMMMM
+                                M M  
+                              MARKER-MONO-M-BOTTOM
+
+                                 [ACTIVE] DECK 
+
+  Testing command deck
+
+  Updated: 01:12:11
+
+──────────────
+                                 display | live
+──────────────
+
+
+
+--- Turn 23/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cd /workspace && python3 scripts/display.py --once --script-name "status" --mode "monitor"
+```
+
+[EXECUTING bash]:
+cd /workspace && python3 scripts/display.py --once --script-name "status" --mode "monitor"
+
+[OUTPUT]:
+
+                              MARKER-MONO-M-TOP
+                                MMM  
+                               M   M 
+                              MMMMM
+                                M M  
+                              MARKER-MONO-M-BOTTOM
+
+                                 [ACTIVE] DECK 
+
+  Testing command deck
+
+  Updated: 01:12:11
+
+────────────────
+                                status | monitor
+────────────────
+
+
+
+--- Turn 24/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cd /workspace && cat setup.sh && ./setup.sh
+```
+
+[EXECUTING bash]:
+cd /workspace && cat setup.sh && ./setup.sh
+
+[OUTPUT]:
+#!/usr/bin/env bash
+set -euo pipefail
+chmod +x scripts/configure.py scripts/display.py scripts/status.py || true
+mkdir -p assets/monograms
+
+
+--- Turn 25/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cd /workspace && python3 scripts/configure.py update --letter A && python3 scripts/display.py --once
+```
+
+[EXECUTING bash]:
+cd /workspace && python3 scripts/configure.py update --letter A && python3 scripts/display.py --once
+
+[OUTPUT]:
+Updated config: {'letter': 'A', 'name': 'DECK', 'idle_timeout': 123, 'marker': 'CONFIG-MARKER-7'}
+
+                              MARKER-MONO-A-TOP
+                                AAA  
+                               A   A 
+                              AAAAA
+                                A A  
+                              MARKER-MONO-A-BOTTOM
+
+                                 [ACTIVE] DECK 
+
+  Testing command deck
+
+  Updated: 01:12:11
+
+──────────────
+                                 display | live
+──────────────
+
+
+
+⚠️ Agent reached max turns (25)
+
+Conversation saved to results/repair_run_Qwen3.5-27B_20260414_091054/voidcooks-clawd-presence_create_hard_004/conversation.json
+
+============================================================
+Running evaluation...
+============================================================
+
+Results for voidcooks-clawd-presence_create_hard_004:
+  Passed: False
+  Score:  0.57
+  Checks:
+    ✅ config_exists: loaded
+    ✅ state_exists: loaded
+    ❌ display_preserves_core_behavior: expects idle timeout, sleep state, and monogram loading logic in display.py
+    ✅ display_footer_added: expected some footer/script-name related rendering in display.py
+    ❌ configure_safe_init_support: expects load/save config and auto-detection support
+    ❌ custom_monogram_preference: expected custom monogram lookup with fallback behavior
+    ✅ marker_monogram_present: marker lines verified
+
+Cleaning up container ed45a97208af...
+Container removed.
+

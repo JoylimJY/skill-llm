@@ -1,0 +1,92 @@
+import json
+import re
+import sys
+from pathlib import Path
+
+workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+checks = []
+
+
+def add_check(name, passed, detail):
+    checks.append({"name": name, "passed": bool(passed), "detail": detail})
+
+
+def safe_read(path):
+    try:
+        return path.read_text(encoding='utf-8', errors='replace')
+    except Exception as e:
+        return None, str(e)
+
+# Check 1: marker file exists and contains expected marker
+try:
+    marker_path = workspace / 'task_marker.txt'
+    if not marker_path.exists():
+        add_check('marker file exists', False, 'task_marker.txt is missing')
+    else:
+        txt = marker_path.read_text(encoding='utf-8', errors='replace')
+        passed = 'ADV_PROMPTING_MEDIUM_2025' in txt and 'consolidation-debugging' in txt
+        add_check('marker file exists', passed, 'marker content verified' if passed else f'unexpected content: {txt[:120]!r}')
+except Exception as e:
+    add_check('marker file exists', False, f'error reading marker file: {e}')
+
+# Check 2: PDF exists and contains marker text
+try:
+    pdf_path = workspace / 'reference_brief.pdf'
+    if not pdf_path.exists():
+        add_check('pdf exists', False, 'reference_brief.pdf is missing')
+    else:
+        try:
+            import PyPDF2
+            reader = PyPDF2.PdfReader(str(pdf_path))
+            text = ''
+            for page in reader.pages:
+                try:
+                    text += page.extract_text() or ''
+                except Exception:
+                    pass
+            passed = 'ADV_PROMPTING_MEDIUM_2025' in text and 'Fix A' in text and 'Fix B' in text
+            add_check('pdf marker text', passed, 'pdf text verified' if passed else f'pdf text missing markers; extracted snippet: {text[:200]!r}')
+        except Exception as e:
+            add_check('pdf marker text', False, f'could not parse pdf: {e}')
+except Exception as e:
+    add_check('pdf marker text', False, f'error handling pdf: {e}')
+
+# Check 3: user request file exists and is semantically close to expected purpose
+try:
+    req_path = workspace / 'user_request.txt'
+    if not req_path.exists():
+        add_check('user request exists', False, 'user_request.txt is missing')
+    else:
+        txt = req_path.read_text(encoding='utf-8', errors='replace')
+        norm = re.sub(r'[^a-z0-9]+', ' ', txt.lower())
+        keywords = ['analyze', 'weakness', 'validate', 'recommend']
+        passed = all(k in norm for k in keywords)
+        add_check('user request exists', passed, 'request content matches intent' if passed else f'content not aligned: {txt[:180]!r}')
+except Exception as e:
+    add_check('user request exists', False, f'error reading user request: {e}')
+
+# Check 4: output file from assistant exists and has substantive content
+try:
+    output_candidates = [workspace / 'output.txt', workspace / 'analysis.txt', workspace / 'result.txt']
+    found = None
+    for p in output_candidates:
+        if p.exists():
+            found = p
+            break
+    if found is None:
+        add_check('assistant output file', False, 'no expected output file found (output.txt/analysis.txt/result.txt)')
+    else:
+        try:
+            content = found.read_text(encoding='utf-8', errors='replace')
+            norm = re.sub(r'\s+', ' ', content.strip())
+            passed = len(norm) >= 40 and any(term in norm.lower() for term in ['option', 'recommend', 'validation', 'risk'])
+            add_check('assistant output file', passed, f'found {found.name} with substantive content' if passed else f'content too thin: {content[:200]!r}')
+        except Exception as e:
+            add_check('assistant output file', False, f'could not read output file: {e}')
+except Exception as e:
+    add_check('assistant output file', False, f'error checking output file: {e}')
+
+passed_count = sum(1 for c in checks if c['passed'])
+score = passed_count / len(checks) if checks else 0.0
+result = {"passed": passed_count == len(checks), "score": score, "checks": checks}
+print(json.dumps(result, ensure_ascii=False))

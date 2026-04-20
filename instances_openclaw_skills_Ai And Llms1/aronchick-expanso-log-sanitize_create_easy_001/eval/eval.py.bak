@@ -1,0 +1,65 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+checks = []
+workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+
+
+def add_check(name, passed, detail):
+    checks.append({"name": name, "passed": bool(passed), "detail": str(detail)})
+
+try:
+    out_path = workspace / "sanitized.log"
+    if not out_path.exists():
+        add_check("output_exists", False, "sanitized.log is missing")
+    else:
+        try:
+            text = out_path.read_text(encoding="utf-8", errors="replace")
+        except Exception as e:
+            add_check("output_readable", False, f"Could not read sanitized.log: {e}")
+            text = ""
+
+        lowered = text.lower()
+        secret_patterns = [
+            r"password\s*[:=]\s*\S+",
+            r"token\s*[:=]\s*\S+",
+            r"api[_-]?key\s*[:=]\s*\S+",
+            r"sk_test_[a-z0-9]+",
+            r"akia[0-9a-z]+",
+        ]
+        found = []
+        for pat in secret_patterns:
+            try:
+                if re.search(pat, lowered, re.IGNORECASE):
+                    found.append(pat)
+            except Exception:
+                continue
+        add_check("secrets_removed", len(found) == 0, "Secret-like patterns still present" if found else "No obvious secrets detected")
+
+        try:
+            original = (workspace / "input.log").read_text(encoding="utf-8", errors="replace")
+            # Verify normal log lines remain with fuzzy matching on key phrases.
+            expected_phrases = [
+                "starting job",
+                "request completed successfully",
+            ]
+            missing = []
+            for phrase in expected_phrases:
+                if phrase not in lowered:
+                    missing.append(phrase)
+            add_check("important_content_preserved", len(missing) == 0, "Missing preserved phrases: " + ", ".join(missing) if missing else "Core non-secret lines preserved")
+
+            # Ensure output is not identical to input.
+            same = text.strip() == original.strip()
+            add_check("content_modified", not same, "Output should differ from input because secrets must be removed" if same else "Output differs from input")
+        except Exception as e:
+            add_check("input_comparison", False, f"Could not compare with input.log: {e}")
+except Exception as e:
+    add_check("unexpected_error", False, f"Unexpected evaluator error: {e}")
+
+passed = all(c["passed"] for c in checks) if checks else False
+score = (sum(1 for c in checks if c["passed"]) / len(checks)) if checks else 0.0
+print(json.dumps({"passed": passed, "score": score, "checks": checks}, ensure_ascii=False))

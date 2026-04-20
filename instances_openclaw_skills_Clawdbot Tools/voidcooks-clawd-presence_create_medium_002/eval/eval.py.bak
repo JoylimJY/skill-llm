@@ -1,0 +1,134 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+
+def norm_text(s):
+    try:
+        return re.sub(r'[^a-z0-9]+', '', str(s).lower())
+    except Exception:
+        return ''
+
+
+def read_json(path):
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        return None
+
+
+def read_text(path):
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return f.read()
+    except Exception:
+        return None
+
+
+def main():
+    workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+    checks = []
+
+    # 1) config.json exists and matches expected values fuzzily
+    try:
+        cfg_path = workspace / 'config.json'
+        cfg = read_json(cfg_path)
+        if isinstance(cfg, dict):
+            letter_ok = norm_text(cfg.get('letter', '')) == 'q'
+            name_ok = 'quartz' in norm_text(cfg.get('name', ''))
+            timeout_ok = str(cfg.get('idle_timeout', '')) == '420'
+            passed = letter_ok and name_ok and timeout_ok
+            detail = f"letter={cfg.get('letter')!r}, name={cfg.get('name')!r}, idle_timeout={cfg.get('idle_timeout')!r}"
+        else:
+            passed = False
+            detail = 'config.json missing or malformed'
+    except Exception as e:
+        passed = False
+        detail = f'error reading config.json: {e}'
+    checks.append({'name': 'config.json configured', 'passed': passed, 'detail': detail})
+
+    # 2) state.json exists and is idle/ready-ish
+    try:
+        state_path = workspace / 'state.json'
+        state = read_json(state_path)
+        if isinstance(state, dict):
+            state_ok = norm_text(state.get('state', '')) in {'idle', 'ready'}
+            msg_ok = isinstance(state.get('message', ''), str)
+            updated_ok = isinstance(state.get('updated', None), (int, float))
+            passed = state_ok and msg_ok and updated_ok
+            detail = f"state={state.get('state')!r}, message={state.get('message')!r}, updated={state.get('updated')!r}"
+        else:
+            passed = False
+            detail = 'state.json missing or malformed'
+    except Exception as e:
+        passed = False
+        detail = f'error reading state.json: {e}'
+    checks.append({'name': 'state.json initialized', 'passed': passed, 'detail': detail})
+
+    # 3) custom monogram file exists and contains expected marker pattern
+    try:
+        mono_path = workspace / 'assets' / 'monograms' / 'Q.txt'
+        txt = read_text(mono_path)
+        if isinstance(txt, str):
+            norm = norm_text(txt)
+            passed = 'qqqqq' in norm and 'q' in norm
+            detail = f'length={len(txt)} chars'
+        else:
+            passed = False
+            detail = 'assets/monograms/Q.txt missing or unreadable'
+    except Exception as e:
+        passed = False
+        detail = f'error reading monogram: {e}'
+    checks.append({'name': 'custom monogram present', 'passed': passed, 'detail': detail})
+
+    # 4) presence helper scripts exist
+    try:
+        required = [workspace / 'scripts' / 'configure.py', workspace / 'scripts' / 'display.py', workspace / 'scripts' / 'status.py']
+        missing = [str(p.name) for p in required if not p.exists()]
+        passed = len(missing) == 0
+        detail = 'missing=' + ', '.join(missing) if missing else 'all scripts present'
+    except Exception as e:
+        passed = False
+        detail = f'error checking scripts: {e}'
+    checks.append({'name': 'core scripts available', 'passed': passed, 'detail': detail})
+
+    # 5) README note exists and mentions how to start display
+    try:
+        candidates = [workspace / 'README.md', workspace / 'readme.md', workspace / 'NOTES.md']
+        found = None
+        for p in candidates:
+            if p.exists():
+                found = p
+                break
+        if found:
+            txt = read_text(found) or ''
+            norm = norm_text(txt)
+            passed = ('display' in norm) and ('configure' in norm) and ('status' in norm)
+            detail = f'file={found.name}'
+        else:
+            passed = False
+            detail = 'README note not found'
+    except Exception as e:
+        passed = False
+        detail = f'error checking README note: {e}'
+    checks.append({'name': 'usage note added', 'passed': passed, 'detail': detail})
+
+    total = len(checks)
+    passed_count = sum(1 for c in checks if c['passed'])
+    score = passed_count / total if total else 0.0
+    result = {
+        'passed': passed_count == total,
+        'score': score,
+        'checks': checks,
+    }
+    print(json.dumps(result, indent=2))
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except Exception:
+        print(json.dumps({'passed': False, 'score': 0.0, 'checks': [{'name': 'fatal', 'passed': False, 'detail': 'unexpected evaluator failure'}]}))

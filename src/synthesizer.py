@@ -238,6 +238,7 @@ def synthesize_skill(
 
     # Distribute instances across difficulty levels
     difficulties = ["easy", "medium", "hard"]
+    
     per_difficulty = num_instances // len(difficulties)
     remainder = num_instances % len(difficulties)
 

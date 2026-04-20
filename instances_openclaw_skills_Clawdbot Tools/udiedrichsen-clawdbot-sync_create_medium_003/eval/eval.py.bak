@@ -1,0 +1,104 @@
+import json
+import os
+from pathlib import Path
+
+
+def load_json(path):
+    try:
+        return json.loads(path.read_text(encoding='utf-8'))
+    except Exception as e:
+        return None, str(e)
+
+
+def fuzzy_has(text, needle):
+    try:
+        return needle.lower() in text.lower()
+    except Exception:
+        return False
+
+workspace = Path(__import__('sys').argv[1])
+checks = []
+
+try:
+    peers_path = workspace / 'memory' / 'clawdbot-sync' / 'peers.json'
+    passed = False
+    detail = 'missing peers.json'
+    if peers_path.exists():
+        try:
+            data = json.loads(peers_path.read_text(encoding='utf-8'))
+            peers = data.get('peers', []) if isinstance(data, dict) else []
+            found = False
+            for p in peers:
+                if not isinstance(p, dict):
+                    continue
+                name = str(p.get('name', ''))
+                host = str(p.get('host', ''))
+                user = str(p.get('user', ''))
+                path = str(p.get('path', ''))
+                if 'office-peer' in name.lower() and '100.64.12.34' in host and 'clawdbot' in user and '/home/clawdbot/clawd' in path:
+                    found = True
+                    break
+            passed = found
+            detail = 'office-peer entry present' if found else f'office-peer entry not found; peers={peers}'
+        except Exception as e:
+            detail = f'could not parse peers.json: {e}'
+    checks.append({'name': 'peer registry updated', 'passed': passed, 'detail': detail})
+except Exception as e:
+    checks.append({'name': 'peer registry updated', 'passed': False, 'detail': f'check crashed: {e}'})
+
+try:
+    history_path = workspace / 'memory' / 'clawdbot-sync' / 'history.json'
+    passed = False
+    detail = 'missing history.json'
+    if history_path.exists():
+        try:
+            data = json.loads(history_path.read_text(encoding='utf-8'))
+            entries = data.get('entries', []) if isinstance(data, dict) else []
+            found = False
+            for item in entries:
+                if not isinstance(item, dict):
+                    continue
+                text = json.dumps(item, ensure_ascii=False)
+                if 'office-peer' in text.lower() and ('pending' in text.lower() or 'queued' in text.lower() or 'push' in text.lower()):
+                    found = True
+                    break
+            passed = found
+            detail = 'pending sync history entry present' if found else f'no pending office-peer history entry; entries={entries}'
+        except Exception as e:
+            detail = f'could not parse history.json: {e}'
+    checks.append({'name': 'pending sync entry recorded', 'passed': passed, 'detail': detail})
+except Exception as e:
+    checks.append({'name': 'pending sync entry recorded', 'passed': False, 'detail': f'check crashed: {e}'})
+
+try:
+    config_path = workspace / 'memory' / 'clawdbot-sync' / 'config.json'
+    passed = False
+    detail = 'missing config.json'
+    if config_path.exists():
+        try:
+            data = json.loads(config_path.read_text(encoding='utf-8'))
+            txt = json.dumps(data, ensure_ascii=False).lower() if isinstance(data, dict) else ''
+            passed = ('auto_sync' in txt or 'auto-sync' in txt) and ('office-peer' in txt or 'include_peers' in txt or 'peers' in txt)
+            detail = 'config references sync settings' if passed else f'config does not reflect peer inclusion; content={data}'
+        except Exception as e:
+            detail = f'could not parse config.json: {e}'
+    checks.append({'name': 'sync config adjusted', 'passed': passed, 'detail': detail})
+except Exception as e:
+    checks.append({'name': 'sync config adjusted', 'passed': False, 'detail': f'check crashed: {e}'})
+
+try:
+    identity_path = workspace / 'memory' / 'IDENTITY.md'
+    passed = identity_path.exists()
+    detail = 'IDENTITY.md preserved' if passed else 'IDENTITY.md missing'
+    checks.append({'name': 'identity file preserved', 'passed': passed, 'detail': detail})
+except Exception as e:
+    checks.append({'name': 'identity file preserved', 'passed': False, 'detail': f'check crashed: {e}'})
+
+try:
+    total = len(checks)
+    passed_count = sum(1 for c in checks if c.get('passed'))
+    score = (passed_count / total) if total else 0.0
+    result = {'passed': passed_count == total, 'score': score, 'checks': checks}
+    print(json.dumps(result, ensure_ascii=False))
+except Exception as e:
+    print(json.dumps({'passed': False, 'score': 0.0, 'checks': [{'name': 'finalize', 'passed': False, 'detail': str(e)}]}, ensure_ascii=False))

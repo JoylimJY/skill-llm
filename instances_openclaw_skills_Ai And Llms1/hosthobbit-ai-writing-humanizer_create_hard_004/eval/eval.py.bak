@@ -1,0 +1,64 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+
+def norm(s):
+    try:
+        s = s.lower()
+        s = re.sub(r"\s+", " ", s)
+        s = re.sub(r"[^a-z0-9$\-\.]", "", s)
+        return s
+    except Exception:
+        return ""
+
+
+def main():
+    checks = []
+    ws = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+    out = ws / 'cleaned.txt'
+    inp = ws / 'input.txt'
+
+    try:
+        exists = out.exists()
+        checks.append({"name": "output_exists", "passed": exists, "detail": "cleaned.txt present" if exists else "cleaned.txt is missing"})
+    except Exception as e:
+        checks.append({"name": "output_exists", "passed": False, "detail": f"error checking output existence: {e}"})
+
+    try:
+        if exists:
+            text = out.read_text(encoding='utf-8', errors='replace')
+            ntext = norm(text)
+            has_maya = 'maya chen' in ntext
+            has_date = '2025-04-18' in text or '2025 04 18' in text
+            has_amount = '1840' in ntext and 'dollar' in ntext
+            no_hedge = 'at the end of the day' not in ntext and 'i hope this helps' not in ntext and 'it is important to remember' not in ntext
+            checks.append({"name": "preserve_key_facts", "passed": has_maya and has_date and has_amount, "detail": f"maya={has_maya}, date={has_date}, amount={has_amount}"})
+            checks.append({"name": "remove_ai_tells", "passed": no_hedge, "detail": f"hedging/stock phrases removed={no_hedge}"})
+        else:
+            checks.append({"name": "preserve_key_facts", "passed": False, "detail": "cannot inspect missing output"})
+            checks.append({"name": "remove_ai_tells", "passed": False, "detail": "cannot inspect missing output"})
+    except Exception as e:
+        checks.append({"name": "content_checks", "passed": False, "detail": f"error reading/parsing output: {e}"})
+
+    try:
+        marker = (ws / 'marker.txt').read_text(encoding='utf-8', errors='replace')
+        marker_ok = 'MARKER_AI_HUMANIZER_7F3A' in marker
+        checks.append({"name": "marker_present", "passed": marker_ok, "detail": "marker found" if marker_ok else "marker missing or altered"})
+    except Exception as e:
+        checks.append({"name": "marker_present", "passed": False, "detail": f"error reading marker: {e}"})
+
+    try:
+        total = len(checks)
+        passed = sum(1 for c in checks if c.get('passed'))
+        score = (passed / total) if total else 0.0
+        result = {"passed": passed == total and total > 0, "score": score, "checks": checks}
+        print(json.dumps(result, ensure_ascii=False))
+    except Exception:
+        print('{"passed": false, "score": 0.0, "checks": []}')
+
+
+if __name__ == '__main__':
+    main()

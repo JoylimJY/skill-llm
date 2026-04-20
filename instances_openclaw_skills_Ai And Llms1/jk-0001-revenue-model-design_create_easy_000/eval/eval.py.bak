@@ -1,0 +1,86 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+
+def safe_read(path: Path):
+    try:
+        return path.read_text(encoding="utf-8")
+    except Exception as e:
+        return None, str(e)
+
+
+def normalize(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+
+
+def main():
+    workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path.cwd()
+    checks = []
+
+    output_path = workspace / "revenue_model_brief.txt"
+    notes_path = workspace / "notes.txt"
+
+    # Check 1: input file exists and has marker
+    try:
+        notes = notes_path.read_text(encoding="utf-8")
+        passed = "SOLOREV-2025-ALPHA" in notes
+        detail = "marker found" if passed else "marker missing"
+    except Exception as e:
+        passed = False
+        detail = f"could not read notes.txt: {e}"
+    checks.append({"name": "input marker", "passed": passed, "detail": detail})
+
+    # Check 2: output file exists
+    try:
+        exists = output_path.exists()
+        passed = bool(exists)
+        detail = "output exists" if passed else "revenue_model_brief.txt is missing"
+    except Exception as e:
+        passed = False
+        detail = f"existence check failed: {e}"
+    checks.append({"name": "output file exists", "passed": passed, "detail": detail})
+
+    # Check 3: output mentions subscription and one-time starter product
+    try:
+        text = output_path.read_text(encoding="utf-8")
+        ntext = normalize(text)
+        passed = ("subscription" in ntext) and ("one time" in ntext or "one-time" in text.lower() or "starter product" in ntext)
+        detail = "contains expected revenue model elements" if passed else "missing subscription and/or starter product language"
+    except Exception as e:
+        passed = False
+        detail = f"could not read output: {e}"
+    checks.append({"name": "model content", "passed": passed, "detail": detail})
+
+    # Check 4: output mentions predictable monthly income or similar
+    try:
+        text = output_path.read_text(encoding="utf-8")
+        ntext = normalize(text)
+        passed = ("predictable monthly income" in ntext) or ("recurring income" in ntext) or ("monthly income" in ntext)
+        detail = "mentions monthly income goal" if passed else "does not mention the monthly income goal"
+    except Exception as e:
+        passed = False
+        detail = f"could not parse output: {e}"
+    checks.append({"name": "income goal", "passed": passed, "detail": detail})
+
+    # Check 5: output is concise-ish, not empty
+    try:
+        text = output_path.read_text(encoding="utf-8")
+        passed = len(text.strip()) > 50
+        detail = f"length={len(text.strip())}" if passed else "output too short or empty"
+    except Exception as e:
+        passed = False
+        detail = f"length check failed: {e}"
+    checks.append({"name": "non-empty output", "passed": passed, "detail": detail})
+
+    total = len(checks)
+    passed_count = sum(1 for c in checks if c["passed"])
+    score = passed_count / total if total else 0.0
+    result = {"passed": passed_count == total, "score": score, "checks": checks}
+    print(json.dumps(result, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    main()

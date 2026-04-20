@@ -1,0 +1,972 @@
+Building Docker image...
+Creating new container...
+Container ready: 3362dfb10b21
+Workspace files: gen_inputs.py
+input
+output
+setup.sh
+
+============================================================
+Starting agent interaction (Repair Mode)...
+============================================================
+
+============================================================
+TASK: You are in the token-guard project directory. Please implement a small CLI utility that reads the provided usage log and generates a human-readable quota summary plus a machine-readable JSON report. The utility should also detect obvious duplicate-request bursts and write a short alert file when they occur. Keep the implementation dependency-free if possible, and make sure the output filenames match the ones described in the task files.
+============================================================
+
+
+--- Turn 1/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+ls -la /workspace
+```
+
+[EXECUTING bash]:
+ls -la /workspace
+
+[OUTPUT]:
+total 8
+drwxr-xr-x 4 root  root    90 Apr 13 10:00 .
+drwxr-xr-x 1 root  root    31 Apr 13 10:00 ..
+-rw-r--r-- 1 32113 42021 1073 Apr 12 11:17 gen_inputs.py
+drwxr-xr-x 2 root  root    57 Apr 13 10:00 input
+drwxr-xr-x 2 root  root    10 Apr 13 10:00 output
+-rwxr-xr-x 1 32113 42021   52 Apr 12 11:17 setup.sh
+
+
+--- Turn 2/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+ls -la /workspace/input /workspace/output
+```
+
+[EXECUTING bash]:
+ls -la /workspace/input /workspace/output
+
+[OUTPUT]:
+/workspace/input:
+total 8
+drwxr-xr-x 2 root root  57 Apr 13 10:00 .
+drwxr-xr-x 4 root root  90 Apr 13 10:00 ..
+-rw-r--r-- 1 root root  76 Apr 13 10:00 notes.txt
+-rw-r--r-- 1 root root 798 Apr 13 10:00 usage_log.json
+
+/workspace/output:
+total 0
+drwxr-xr-x 2 root root 10 Apr 13 10:00 .
+drwxr-xr-x 4 root root 90 Apr 13 10:00 ..
+
+
+--- Turn 3/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/input/notes.txt
+```
+
+[EXECUTING bash]:
+cat /workspace/input/notes.txt
+
+[OUTPUT]:
+Marker: TG_MARKER_9f3a2c
+Expected report names: summary.txt and report.json
+
+
+--- Turn 4/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/input/usage_log.json
+```
+
+[EXECUTING bash]:
+cat /workspace/input/usage_log.json
+
+[OUTPUT]:
+{
+  "project": "token-guard-demo",
+  "model": "gemini-3-flash",
+  "records": [
+    {
+      "ts": "2025-04-01T12:00:00Z",
+      "prompt": "Summarize the quarterly report",
+      "tokens": 1200
+    },
+    {
+      "ts": "2025-04-01T12:00:12Z",
+      "prompt": "Summarize the quarterly report",
+      "tokens": 1200
+    },
+    {
+      "ts": "2025-04-01T12:00:24Z",
+      "prompt": "Summarize the quarterly report",
+      "tokens": 1200
+    },
+    {
+      "ts": "2025-04-01T12:04:00Z",
+      "prompt": "Translate the release notes to Chinese",
+      "tokens": 900
+    },
+    {
+      "ts": "2025-04-01T12:05:00Z",
+      "prompt": "Draft a short email reply",
+      "tokens": 400
+    }
+  ],
+  "quota_limit": 10000,
+  "window_seconds": 60,
+  "duplicate_burst_threshold": 3,
+  "marker": "TG_MARKER_9f3a2c"
+}
+
+--- Turn 5/25 ---
+
+[ASSISTANT]:
+
+
+Now I understand the task. I need to create a CLI utility that:
+1. Reads `usage_log.json`
+2. Generates `summary.txt` (human-readable)
+3. Generates `report.json` (machine-readable)
+4. Detects duplicate-request bursts and writes an alert file
+
+Let me create the Python script:
+
+```python
+cat > /workspace/token_guard.py << 'EOF'
+#!/usr/bin/env python3
+"""
+Token Guard CLI Utility
+Reads usage logs and generates quota summary, JSON report, and alerts for duplicate bursts.
+"""
+
+import json
+import sys
+from datetime import datetime
+from collections import defaultdict
+
+def parse_timestamp(ts_str):
+    """Parse ISO timestamp string to datetime object."""
+    return datetime.fromisoformat(ts_str.replace('Z', '+00:00'))
+
+def load_usage_log(filepath):
+    """Load and parse the usage log JSON file."""
+    with open(filepath, 'r') as f:
+        return json.load(f)
+
+def calculate_quota_stats(records, quota_limit):
+    """Calculate quota usage statistics."""
+    total_tokens = sum(r['tokens'] for r in ...
+
+--- Turn 6/25 ---
+
+[ASSISTANT]:
+
+
+```python
+cat > /workspace/token_guard.py << 'EOF'
+#!/usr/bin/env python3
+"""
+Token Guard CLI Utility
+Reads usage logs and generates quota summary, JSON report, and alerts for duplicate bursts.
+"""
+
+import json
+import sys
+from datetime import datetime
+from collections import defaultdict
+
+def parse_timestamp(ts_str):
+    """Parse ISO timestamp string to datetime object."""
+    return datetime.fromisoformat(ts_str.replace('Z', '+00:00'))
+
+def load_usage_log(filepath):
+    """Load and parse the usage log JSON file."""
+    with open(filepath, 'r') as f:
+        return json.load(f)
+
+def calculate_quota_stats(records, quota_limit):
+    """Calculate quota usage statistics."""
+    total_tokens = sum(r['tokens'] for r in records)
+    remaining = quota_limit - total_tokens
+    usage_percent = (total_tokens / quota_limit * 100) if quota_limit > 0 else 0
+    return {
+        'total_tokens': total_tokens,
+        'quota_limit': quota_limit,
+        'remaining': remaining,
+        'usage_percent':...
+
+[EXECUTING python]:
+cat > /workspace/token_guard.py << 'EOF'
+#!/usr/bin/env python3
+"""
+Token Guard CLI Utility
+Reads usage logs and generates quota summary, JSON report, and alerts for duplicate bursts.
+"""
+
+import json
+import sys
+from datetime import datetime
+from collections import defaultdict
+
+def parse_timestamp(ts_str):
+    """Parse ISO timestamp string to datetime object."""
+    return datetime.fromisoformat(ts_str.replace('Z', '+00:00'))
+
+def load_usage_log(filepath):
+    """Load and parse the usage log JSON file."""
+    with open(filepath, 'r') as f:
+        return json.load(f)
+
+def calculate_quota_stats(records, quota_limit):
+    """Calculate quota usage statistics."""
+    total_tokens = sum(r['tokens'] for r in records)
+    remaining = quota_limit - total_tokens
+    usage_percent = (total_tokens / quota_limit * 100) if quota_limit > 0 else 0
+    return {
+        'total_tokens': total_tokens,
+        'quota_limit': quota_limit,
+        'remaining': remaining,
+        'usage_percent': round(usage_percent, 2)
+    }
+
+def detect_duplicate_bursts(records, window_seconds, threshold):
+    """
+    Detect duplicate request bursts.
+    A burst is when the same prompt appears >= threshold times within window_seconds.
+    """
+    bursts = []
+    prompt_times = defaultdict(list)
+    
+    # Group records by prompt and collect timestamps
+    for record in records:
+        ts = parse_timestamp(record['ts'])
+        prompt_times[record['prompt']].append({
+            'timestamp': ts,
+            'record': record
+        })
+    
+    # Check each prompt for bursts
+    for prompt, entries in prompt_times.items():
+        # Sort by timestamp
+        entries.sort(key=lambda x: x['timestamp'])
+        
+        # Sliding window check
+        for i, entry in enumerate(entries):
+            window_start = entry['timestamp']
+            window_entries = []
+            
+            for j in range(i, len(entries)):
+                time_diff = (entries[j]['timestamp'] - window_start).total_seconds()
+                if time_diff <= window_seconds:
+                    window_entries.append(entries[j])
+                else:
+                    break
+            
+            if len(window_entries) >= threshold:
+                # Found a burst
+                burst_info = {
+                    'prompt': prompt,
+                    'count': len(window_entries),
+                    'start_time': window_entries[0]['record']['ts'],
+                    'end_time': window_entries[-1]['record']['ts'],
+                    'window_seconds': window_seconds,
+                    'threshold': threshold
+                }
+                # Avoid duplicate burst reports
+                if burst_info not in bursts:
+                    bursts.append(burst_info)
+    
+    return bursts
+
+def generate_summary(data, quota_stats, bursts, output_path):
+    """Generate human-readable summary file."""
+    lines = []
+    lines.append("=" * 50)
+    lines.append("TOKEN GUARD QUOTA SUMMARY")
+    lines.append("=" * 50)
+    lines.append("")
+    lines.append(f"Project: {data['project']}")
+    lines.append(f"Model: {data['model']}")
+    lines.append(f"Marker: {data.get('marker', 'N/A')}")
+    lines.append("")
+    lines.append("-" * 50)
+    lines.append("QUOTA STATUS")
+    lines.append("-" * 50)
+    lines.append(f"Total Tokens Used: {quota_stats['total_tokens']}")
+    lines.append(f"Quota Limit: {quota_stats['quota_limit']}")
+    lines.append(f"Remaining: {quota_stats['remaining']}")
+    lines.append(f"Usage: {quota_stats['usage_percent']}%")
+    lines.append("")
+    lines.append("-" * 50)
+    lines.append("REQUEST BREAKDOWN")
+    lines.append("-" * 50)
+    
+    for i, record in enumerate(data['records'], 1):
+        prompt_preview = record['prompt'][:50]
+        lines.append(f"{i}. [{record['ts']}] {record['tokens']} tokens")
+        lines.append(f"   Prompt: {prompt_preview}")
+    
+    lines.append("")
+    lines.append("-" * 50)
+    lines.append("ALERTS")
+    lines.append("-" * 50)
+    
+    if bursts:
+        for burst in bursts:
+            lines.append(f"WARNING: DUPLICATE BURST DETECTED")
+            lines.append(f"   Prompt: {burst['prompt']}")
+            lines.append(f"   Occurrences: {burst['count']} in {burst['window_seconds']}s window")
+            lines.append(f"   Time Range: {burst['start_time']} to {burst['end_time']}")
+            lines.append("")
+    else:
+        lines.append("No alerts.")
+    
+    lines.append("")
+    lines.append("=" * 50)
+    lines.append("END OF SUMMARY")
+    lines.append("=" * 50)
+    
+    with open(output_path, 'w') as f:
+        f.write('\n'.join(lines))
+
+def generate_json_report(data, quota_stats, bursts, output_path):
+    """Generate machine-readable JSON report."""
+    report = {
+        'project': data['project'],
+        'model': data['model'],
+        'marker': data.get('marker', 'N/A'),
+        'generated_at': datetime.utcnow().isoformat() + 'Z',
+        'quota': {
+            'total_tokens': quota_stats['total_tokens'],
+            'quota_limit': quota_stats['quota_limit'],
+            'remaining': quota_stats['remaining'],
+            'usage_percent': quota_stats['usage_percent']
+        },
+        'record_count': len(data['records']),
+        'duplicate_bursts': bursts,
+        'alert_count': len(bursts)
+    }
+    
+    with open(output_path, 'w') as f:
+        json.dump(report, f, indent=2)
+
+def generate_alert_file(bursts, output_path):
+    """Generate alert file when duplicate bursts are detected."""
+    if not bursts:
+        return False
+    
+    alert_content = []
+    alert_content.append("TOKEN GUARD ALERT")
+    alert_content.append("Generated: " + datetime.utcnow().isoformat() + 'Z')
+    alert_content.append("")
+    alert_content.append(f"Duplicate Burst Alerts: {len(bursts)}")
+    alert_content.append("")
+    
+    for i, burst in enumerate(bursts, 1):
+        alert_content.append(f"ALERT #{i}:")
+        alert_content.append(f"  Type: DUPLICATE_REQUEST_BURST")
+        alert_content.append(f"  Prompt: {burst['prompt']}")
+        alert_content.append(f"  Count: {burst['count']} requests")
+        alert_content.append(f"  Window: {burst['window_seconds']} seconds")
+        alert_content.append(f"  Threshold Exceeded: {burst['threshold']}")
+        alert_content.append(f"  First Occurrence: {burst['start_time']}")
+        alert_content.append(f"  Last Occurrence: {burst['end_time']}")
+        alert_content.append("")
+    
+    with open(output_path, 'w') as f:
+        f.write('\n'.join(alert_content))
+    
+    return True
+
+def main():
+    # Default paths
+    input_path = '/workspace/input/usage_log.json'
+    output_dir = '/workspace/output'
+    summary_path = f'{output_dir}/summary.txt'
+    report_path = f'{output_dir}/report.json'
+    alert_path = f'{output_dir}/alerts.txt'
+    
+    # Load usage log
+    print(f"Loading usage log from: {input_path}")
+    data = load_usage_log(input_path)
+    
+    # Extract configuration
+    records = data['records']
+    quota_limit = data.get('quota_limit', 10000)
+    window_seconds = data.get('window_seconds', 60)
+    duplicate_threshold = data.get('duplicate_burst_threshold', 3)
+    
+    # Calculate quota statistics
+    quota_stats = calculate_quota_stats(records, quota_limit)
+    
+    # Detect duplicate bursts
+    bursts = detect_duplicate_bursts(records, window_seconds, duplicate_threshold)
+    
+    # Generate outputs
+    print(f"Generating summary: {summary_path}")
+    generate_summary(data, quota_stats, bursts, summary_path)
+    
+    print(f"Generating JSON report: {report_path}")
+    generate_json_report(data, quota_stats, bursts, report_path)
+    
+    print(f"Checking for alerts: {alert_path}")
+    alert_generated = generate_alert_file(bursts, alert_path)
+    if alert_generated:
+        print(f"Alert file generated: {alert_path}")
+    else:
+        print("No alerts generated (no duplicate bursts detected)")
+    
+    print("\nDone!")
+    print(f"  Total tokens: {quota_stats['total_tokens']}")
+    print(f"  Quota usage: {quota_stats['usage_percent']}%")
+    print(f"  Duplicate bursts detected: {len(bursts)}")
+
+if __name__ == '__main__':
+    main()
+EOF
+
+[OUTPUT]:
+[EXIT CODE: 1]
+  File "/tmp/_agent_script.py", line 1
+    cat > /workspace/token_guard.py << 'EOF'
+          ^
+SyntaxError: invalid syntax
+
+
+--- Turn 7/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat > /workspace/token_guard.py << 'EOF'
+#!/usr/bin/env python3
+"""
+Token Guard CLI Utility
+Reads usage logs and generates quota summary, JSON report, and alerts for duplicate bursts.
+"""
+
+import json
+import sys
+from datetime import datetime
+from collections import defaultdict
+
+def parse_timestamp(ts_str):
+    """Parse ISO timestamp string to datetime object."""
+    return datetime.fromisoformat(ts_str.replace('Z', '+00:00'))
+
+def load_usage_log(filepath):
+    """Load and parse the usage log JSON file."""
+    with open(filepath, 'r') as f:
+        return json.load(f)
+
+def calculate_quota_stats(records, quota_limit):
+    """Calculate quota usage statistics."""
+    total_tokens = sum(r['tokens'] for r in records)
+    remaining = quota_limit - total_tokens
+    usage_percent = (total_tokens / quota_limit * 100) if quota_limit > 0 else 0
+    return {
+        'total_tokens': total_tokens,
+        'quota_limit': quota_limit,
+        'remaining': remaining,
+        'usage_percent': r...
+
+--- Turn 8/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat > /workspace/token_guard.py << 'ENDOFSCRIPT'
+#!/usr/bin/env python3
+"""
+Token Guard CLI Utility
+Reads usage logs and generates quota summary, JSON report, and alerts for duplicate bursts.
+"""
+
+import json
+import sys
+from datetime import datetime
+from collections import defaultdict
+
+def parse_timestamp(ts_str):
+    """Parse ISO timestamp string to datetime object."""
+    return datetime.fromisoformat(ts_str.replace('Z', '+00:00'))
+
+def load_usage_log(filepath):
+    """Load and parse the usage log JSON file."""
+    with open(filepath, 'r') as f:
+        return json.load(f)
+
+def calculate_quota_stats(records, quota_limit):
+    """Calculate quota usage statistics."""
+    total_tokens = sum(r['tokens'] for r in records)
+    remaining = quota_limit - total_tokens
+    usage_percent = (total_tokens / quota_limit * 100) if quota_limit > 0 else 0
+    return {
+        'total_tokens': total_tokens,
+        'quota_limit': quota_limit,
+        'remaining': remaining,
+        'usage_per...
+
+[EXECUTING bash]:
+cat > /workspace/token_guard.py << 'ENDOFSCRIPT'
+#!/usr/bin/env python3
+"""
+Token Guard CLI Utility
+Reads usage logs and generates quota summary, JSON report, and alerts for duplicate bursts.
+"""
+
+import json
+import sys
+from datetime import datetime
+from collections import defaultdict
+
+def parse_timestamp(ts_str):
+    """Parse ISO timestamp string to datetime object."""
+    return datetime.fromisoformat(ts_str.replace('Z', '+00:00'))
+
+def load_usage_log(filepath):
+    """Load and parse the usage log JSON file."""
+    with open(filepath, 'r') as f:
+        return json.load(f)
+
+def calculate_quota_stats(records, quota_limit):
+    """Calculate quota usage statistics."""
+    total_tokens = sum(r['tokens'] for r in records)
+    remaining = quota_limit - total_tokens
+    usage_percent = (total_tokens / quota_limit * 100) if quota_limit > 0 else 0
+    return {
+        'total_tokens': total_tokens,
+        'quota_limit': quota_limit,
+        'remaining': remaining,
+        'usage_percent': round(usage_percent, 2)
+    }
+
+def detect_duplicate_bursts(records, window_seconds, threshold):
+    """
+    Detect duplicate request bursts.
+    A burst is when the same prompt appears >= threshold times within window_seconds.
+    """
+    bursts = []
+    prompt_times = defaultdict(list)
+    
+    for record in records:
+        ts = parse_timestamp(record['ts'])
+        prompt_times[record['prompt']].append({
+            'timestamp': ts,
+            'record': record
+        })
+    
+    for prompt, entries in prompt_times.items():
+        entries.sort(key=lambda x: x['timestamp'])
+        
+        for i, entry in enumerate(entries):
+            window_start = entry['timestamp']
+            window_entries = []
+            
+            for j in range(i, len(entries)):
+                time_diff = (entries[j]['timestamp'] - window_start).total_seconds()
+                if time_diff <= window_seconds:
+                    window_entries.append(entries[j])
+                else:
+                    break
+            
+            if len(window_entries) >= threshold:
+                burst_info = {
+                    'prompt': prompt,
+                    'count': len(window_entries),
+                    'start_time': window_entries[0]['record']['ts'],
+                    'end_time': window_entries[-1]['record']['ts'],
+                    'window_seconds': window_seconds,
+                    'threshold': threshold
+                }
+                if burst_info not in bursts:
+                    bursts.append(burst_info)
+    
+    return bursts
+
+def generate_summary(data, quota_stats, bursts, output_path):
+    """Generate human-readable summary file."""
+    lines = []
+    lines.append("=" * 50)
+    lines.append("TOKEN GUARD QUOTA SUMMARY")
+    lines.append("=" * 50)
+    lines.append("")
+    lines.append(f"Project: {data['project']}")
+    lines.append(f"Model: {data['model']}")
+    lines.append(f"Marker: {data.get('marker', 'N/A')}")
+    lines.append("")
+    lines.append("-" * 50)
+    lines.append("QUOTA STATUS")
+    lines.append("-" * 50)
+    lines.append(f"Total Tokens Used: {quota_stats['total_tokens']}")
+    lines.append(f"Quota Limit: {quota_stats['quota_limit']}")
+    lines.append(f"Remaining: {quota_stats['remaining']}")
+    lines.append(f"Usage: {quota_stats['usage_percent']}%")
+    lines.append("")
+    lines.append("-" * 50)
+    lines.append("REQUEST BREAKDOWN")
+    lines.append("-" * 50)
+    
+    for i, record in enumerate(data['records'], 1):
+        prompt_preview = record['prompt'][:50]
+        lines.append(f"{i}. [{record['ts']}] {record['tokens']} tokens")
+        lines.append(f"   Prompt: {prompt_preview}")
+    
+    lines.append("")
+    lines.append("-" * 50)
+    lines.append("ALERTS")
+    lines.append("-" * 50)
+    
+    if bursts:
+        for burst in bursts:
+            lines.append(f"WARNING: DUPLICATE BURST DETECTED")
+            lines.append(f"   Prompt: {burst['prompt']}")
+            lines.append(f"   Occurrences: {burst['count']} in {burst['window_seconds']}s window")
+            lines.append(f"   Time Range: {burst['start_time']} to {burst['end_time']}")
+            lines.append("")
+    else:
+        lines.append("No alerts.")
+    
+    lines.append("")
+    lines.append("=" * 50)
+    lines.append("END OF SUMMARY")
+    lines.append("=" * 50)
+    
+    with open(output_path, 'w') as f:
+        f.write('\n'.join(lines))
+
+def generate_json_report(data, quota_stats, bursts, output_path):
+    """Generate machine-readable JSON report."""
+    report = {
+        'project': data['project'],
+        'model': data['model'],
+        'marker': data.get('marker', 'N/A'),
+        'generated_at': datetime.utcnow().isoformat() + 'Z',
+        'quota': {
+            'total_tokens': quota_stats['total_tokens'],
+            'quota_limit': quota_stats['quota_limit'],
+            'remaining': quota_stats['remaining'],
+            'usage_percent': quota_stats['usage_percent']
+        },
+        'record_count': len(data['records']),
+        'duplicate_bursts': bursts,
+        'alert_count': len(bursts)
+    }
+    
+    with open(output_path, 'w') as f:
+        json.dump(report, f, indent=2)
+
+def generate_alert_file(bursts, output_path):
+    """Generate alert file when duplicate bursts are detected."""
+    if not bursts:
+        return False
+    
+    alert_content = []
+    alert_content.append("TOKEN GUARD ALERT")
+    alert_content.append("Generated: " + datetime.utcnow().isoformat() + 'Z')
+    alert_content.append("")
+    alert_content.append(f"Duplicate Burst Alerts: {len(bursts)}")
+    alert_content.append("")
+    
+    for i, burst in enumerate(bursts, 1):
+        alert_content.append(f"ALERT #{i}:")
+        alert_content.append(f"  Type: DUPLICATE_REQUEST_BURST")
+        alert_content.append(f"  Prompt: {burst['prompt']}")
+        alert_content.append(f"  Count: {burst['count']} requests")
+        alert_content.append(f"  Window: {burst['window_seconds']} seconds")
+        alert_content.append(f"  Threshold Exceeded: {burst['threshold']}")
+        alert_content.append(f"  First Occurrence: {burst['start_time']}")
+        alert_content.append(f"  Last Occurrence: {burst['end_time']}")
+        alert_content.append("")
+    
+    with open(output_path, 'w') as f:
+        f.write('\n'.join(alert_content))
+    
+    return True
+
+def main():
+    input_path = '/workspace/input/usage_log.json'
+    output_dir = '/workspace/output'
+    summary_path = f'{output_dir}/summary.txt'
+    report_path = f'{output_dir}/report.json'
+    alert_path = f'{output_dir}/alerts.txt'
+    
+    print(f"Loading usage log from: {input_path}")
+    data = load_usage_log(input_path)
+    
+    records = data['records']
+    quota_limit = data.get('quota_limit', 10000)
+    window_seconds = data.get('window_seconds', 60)
+    duplicate_threshold = data.get('duplicate_burst_threshold', 3)
+    
+    quota_stats = calculate_quota_stats(records, quota_limit)
+    bursts = detect_duplicate_bursts(records, window_seconds, duplicate_threshold)
+    
+    print(f"Generating summary: {summary_path}")
+    generate_summary(data, quota_stats, bursts, summary_path)
+    
+    print(f"Generating JSON report: {report_path}")
+    generate_json_report(data, quota_stats, bursts, report_path)
+    
+    print(f"Checking for alerts: {alert_path}")
+    alert_generated = generate_alert_file(bursts, alert_path)
+    if alert_generated:
+        print(f"Alert file generated: {alert_path}")
+    else:
+        print("No alerts generated (no duplicate bursts detected)")
+    
+    print("\nDone!")
+    print(f"  Total tokens: {quota_stats['total_tokens']}")
+    print(f"  Quota usage: {quota_stats['usage_percent']}%")
+    print(f"  Duplicate bursts detected: {len(bursts)}")
+
+if __name__ == '__main__':
+    main()
+ENDOFSCRIPT
+
+[OUTPUT]:
+[Command completed successfully with no output]
+
+--- Turn 9/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+python3 /workspace/token_guard.py
+```
+
+[EXECUTING bash]:
+python3 /workspace/token_guard.py
+
+[OUTPUT]:
+Loading usage log from: /workspace/input/usage_log.json
+Generating summary: /workspace/output/summary.txt
+Generating JSON report: /workspace/output/report.json
+Checking for alerts: /workspace/output/alerts.txt
+Alert file generated: /workspace/output/alerts.txt
+
+Done!
+  Total tokens: 4900
+  Quota usage: 49.0%
+  Duplicate bursts detected: 1
+
+
+--- Turn 10/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+ls -la /workspace/output/
+```
+
+[EXECUTING bash]:
+ls -la /workspace/output/
+
+[OUTPUT]:
+total 12
+drwxr-xr-x 2 root root   78 Apr 13 10:01 .
+drwxr-xr-x 4 root root  116 Apr 13 10:01 ..
+-rw-r--r-- 1 root root  314 Apr 13 10:01 alerts.txt
+-rw-r--r-- 1 root root  549 Apr 13 10:01 report.json
+-rw-r--r-- 1 root root 1308 Apr 13 10:01 summary.txt
+
+
+--- Turn 11/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/output/summary.txt
+```
+
+[EXECUTING bash]:
+cat /workspace/output/summary.txt
+
+[OUTPUT]:
+==================================================
+TOKEN GUARD QUOTA SUMMARY
+==================================================
+
+Project: token-guard-demo
+Model: gemini-3-flash
+Marker: TG_MARKER_9f3a2c
+
+--------------------------------------------------
+QUOTA STATUS
+--------------------------------------------------
+Total Tokens Used: 4900
+Quota Limit: 10000
+Remaining: 5100
+Usage: 49.0%
+
+--------------------------------------------------
+REQUEST BREAKDOWN
+--------------------------------------------------
+1. [2025-04-01T12:00:00Z] 1200 tokens
+   Prompt: Summarize the quarterly report
+2. [2025-04-01T12:00:12Z] 1200 tokens
+   Prompt: Summarize the quarterly report
+3. [2025-04-01T12:00:24Z] 1200 tokens
+   Prompt: Summarize the quarterly report
+4. [2025-04-01T12:04:00Z] 900 tokens
+   Prompt: Translate the release notes to Chinese
+5. [2025-04-01T12:05:00Z] 400 tokens
+   Prompt: Draft a short email reply
+
+--------------------------------------------------
+ALERTS
+--------------------------------------------------
+WARNING: DUPLICATE BURST DETECTED
+   Prompt: Summarize the quarterly report
+   Occurrences: 3 in 60s window
+   Time Range: 2025-04-01T12:00:00Z to 2025-04-01T12:00:24Z
+
+
+==================================================
+END OF SUMMARY
+==================================================
+
+--- Turn 12/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/output/report.json
+```
+
+[EXECUTING bash]:
+cat /workspace/output/report.json
+
+[OUTPUT]:
+{
+  "project": "token-guard-demo",
+  "model": "gemini-3-flash",
+  "marker": "TG_MARKER_9f3a2c",
+  "generated_at": "2026-04-13T10:01:57.641823Z",
+  "quota": {
+    "total_tokens": 4900,
+    "quota_limit": 10000,
+    "remaining": 5100,
+    "usage_percent": 49.0
+  },
+  "record_count": 5,
+  "duplicate_bursts": [
+    {
+      "prompt": "Summarize the quarterly report",
+      "count": 3,
+      "start_time": "2025-04-01T12:00:00Z",
+      "end_time": "2025-04-01T12:00:24Z",
+      "window_seconds": 60,
+      "threshold": 3
+    }
+  ],
+  "alert_count": 1
+}
+
+--- Turn 13/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/output/alerts.txt
+```
+
+[EXECUTING bash]:
+cat /workspace/output/alerts.txt
+
+[OUTPUT]:
+TOKEN GUARD ALERT
+Generated: 2026-04-13T10:01:57.641966Z
+
+Duplicate Burst Alerts: 1
+
+ALERT #1:
+  Type: DUPLICATE_REQUEST_BURST
+  Prompt: Summarize the quarterly report
+  Count: 3 requests
+  Window: 60 seconds
+  Threshold Exceeded: 3
+  First Occurrence: 2025-04-01T12:00:00Z
+  Last Occurrence: 2025-04-01T12:00:24Z
+
+
+--- Turn 14/25 ---
+
+[ASSISTANT]:
+
+
+All output files have been generated successfully:
+
+1. **`summary.txt`** - Human-readable quota summary with:
+   - Project/model info
+   - Quota status (4900/10000 tokens used, 49%)
+   - Request breakdown
+   - Duplicate burst alert
+
+2. **`report.json`** - Machine-readable JSON report with:
+   - Project metadata
+   - Quota statistics
+   - Detected duplicate bursts
+   - Alert count
+
+3. **`alerts.txt`** - Alert file triggered because:
+   - The prompt "Summarize the quarterly report" appeared 3 times within 60 seconds
+   - This meets the `duplicate_burst_threshold: 3` requirement
+
+The utility is dependency-free (uses only Python standard library) and correctly detected the duplicate-request burst in the input data.
+
+```bash
+chmod +x /workspace/token_guard.py
+```
+
+[EXECUTING bash]:
+chmod +x /workspace/token_guard.py
+
+[OUTPUT]:
+[Command completed successfully with no output]
+
+--- Turn 15/25 ---
+
+[ASSISTANT]:
+
+
+TASK_COMPLETE
+
+✅ Agent reported TASK_COMPLETE
+
+Conversation saved to results/repair_run_Qwen3.5-27B_20260413_180033/edmonddantesj-token-guard_create_medium_002/conversation.json
+
+============================================================
+Running evaluation...
+============================================================
+
+Results for edmonddantesj-token-guard_create_medium_002:
+  Passed: False
+  Score:  0.00
+  Checks:
+    ❌ summary_exists_and_mentions_key_topics: summary.txt is missing
+    ❌ report_exists_and_has_structure: report.json is missing
+    ❌ report_contains_marker_and_model: report.json is missing
+    ❌ alert_created_for_duplicate_burst: alert.txt is missing
+
+Cleaning up container 3362dfb10b21...
+Container removed.
+

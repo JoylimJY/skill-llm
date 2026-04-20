@@ -1,0 +1,100 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+
+def safe_read_text(path):
+    try:
+        return Path(path).read_text(encoding='utf-8')
+    except Exception as e:
+        return None, str(e)
+
+
+def normalize(s):
+    if not isinstance(s, str):
+        return ''
+    s = s.lower()
+    s = re.sub(r'\s+', ' ', s)
+    s = re.sub(r'[\W_]+', ' ', s)
+    return s.strip()
+
+
+def main():
+    workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+    checks = []
+
+    def add_check(name, passed, detail):
+        checks.append({'name': name, 'passed': bool(passed), 'detail': detail})
+
+    try:
+        out_path = workspace / 'summary.json'
+        if not out_path.exists():
+            add_check('output_exists', False, 'summary.json is missing')
+            result = {'passed': False, 'score': 0.0, 'checks': checks}
+            print(json.dumps(result, ensure_ascii=False))
+            return
+
+        try:
+            data = json.loads(out_path.read_text(encoding='utf-8'))
+            add_check('valid_json', True, 'summary.json parsed successfully')
+        except Exception as e:
+            add_check('valid_json', False, f'Could not parse summary.json: {e}')
+            data = {}
+
+        summary = data.get('summary', '') if isinstance(data, dict) else ''
+        incremental = data.get('incremental', '') if isinstance(data, dict) else ''
+        topics = data.get('topics', []) if isinstance(data, dict) else []
+        actions = data.get('action_items', []) if isinstance(data, dict) else []
+
+        chat_text, chat_err = safe_read_text(workspace / 'chat.json')
+        history_text, hist_err = safe_read_text(workspace / 'history_summary.txt')
+
+        if chat_text is None:
+            add_check('input_chat_present', False, f'chat.json missing or unreadable: {chat_err}')
+        else:
+            add_check('input_chat_present', True, 'chat.json found')
+
+        if history_text is None:
+            add_check('input_history_present', False, f'history_summary.txt missing or unreadable: {hist_err}')
+        else:
+            add_check('input_history_present', True, 'history_summary.txt found')
+
+        ns = normalize(summary)
+        ni = normalize(incremental)
+        ntopics = [normalize(t) for t in topics] if isinstance(topics, list) else []
+        nactions = [normalize(a) for a in actions] if isinstance(actions, list) else []
+
+        topic_hits = 0
+        for needle in ['kyoto', 'budget', 'itinerary']:
+            if needle in ns or any(needle in t for t in ntopics):
+                topic_hits += 1
+        add_check('summary_topics', topic_hits >= 2, f'topic hits: {topic_hits}/3')
+
+        action_hit = any(('book' in a and 'friday' in a) or ('hotel' in a and 'friday' in a) for a in nactions)
+        add_check('action_items', action_hit, 'found reminder to book hotels before Friday' if action_hit else 'missing booking reminder')
+
+        incremental_hit = 'budget' in ni and 'kyoto' in ni
+        add_check('incremental_update', incremental_hit, 'incremental field references previous Kyoto budget context' if incremental_hit else 'incremental field does not reflect prior context')
+
+        marker_ok = False
+        try:
+            marker = (workspace / 'marker.txt').read_text(encoding='utf-8')
+            marker_ok = 'kyoto_summary_task_v1' in normalize(marker)
+        except Exception as e:
+            marker_ok = False
+        add_check('marker_present', marker_ok, 'marker content verified' if marker_ok else 'marker missing or mismatched')
+
+    except Exception as e:
+        add_check('eval_internal_error', False, f'Unexpected evaluator error: {e}')
+
+    passed_count = sum(1 for c in checks if c['passed'])
+    total = len(checks) if checks else 1
+    score = passed_count / total
+    passed = passed_count == total
+    print(json.dumps({'passed': passed, 'score': score, 'checks': checks}, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    main()

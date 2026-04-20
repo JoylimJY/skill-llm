@@ -1,0 +1,103 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+
+def norm(s):
+    try:
+        s = str(s)
+    except Exception:
+        return ""
+    s = s.lower()
+    s = re.sub(r"\s+", "", s)
+    s = re.sub(r"[^a-z0-9_\-./]", "", s)
+    return s
+
+
+def safe_read(path):
+    try:
+        return Path(path).read_text(encoding="utf-8", errors="replace")
+    except Exception as e:
+        return None, str(e)
+
+
+workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+checks = []
+
+# Check 1: task marker exists and contains expected deterministic markers
+passed = False
+try:
+    marker_path = workspace / "task_marker.json"
+    if marker_path.exists():
+        data = json.loads(marker_path.read_text(encoding="utf-8", errors="replace"))
+        task_id_ok = norm(data.get("task_id", "")) == norm("clawd_modify_medium_001")
+        seed_ok = data.get("seed") == 1337
+        markers = " ".join(map(str, data.get("markers", [])))
+        markers_ok = all(m in markers for m in ["CLAWD_MARKER_ALPHA", "CLAWD_MARKER_BETA", "CLAWD_MARKER_GAMMA"])
+        passed = task_id_ok and seed_ok and markers_ok
+        detail = f"task_id_ok={task_id_ok}, seed_ok={seed_ok}, markers_ok={markers_ok}"
+    else:
+        detail = "task_marker.json is missing"
+except Exception as e:
+    detail = f"error reading task_marker.json: {e}"
+checks.append({"name": "generated marker file", "passed": passed, "detail": detail})
+
+# Check 2: reference notes exist and include markers
+passed = False
+try:
+    notes_path = workspace / "reference_notes.txt"
+    if notes_path.exists():
+        text = notes_path.read_text(encoding="utf-8", errors="replace")
+        text_n = norm(text)
+        passed = all(norm(m) in text_n for m in ["CLAWD_MARKER_ALPHA", "CLAWD_MARKER_BETA", "CLAWD_MARKER_GAMMA"])
+        detail = "markers present" if passed else "one or more markers missing"
+    else:
+        detail = "reference_notes.txt is missing"
+except Exception as e:
+    detail = f"error reading reference_notes.txt: {e}"
+checks.append({"name": "reference notes markers", "passed": passed, "detail": detail})
+
+# Check 3: expected output file exists after the assistant's action
+# The expected file is a modified config/output artifact named output.txt
+passed = False
+try:
+    out_path = workspace / "output.txt"
+    if out_path.exists():
+        txt = out_path.read_text(encoding="utf-8", errors="replace")
+        txt_n = norm(txt)
+        has_blue = any(x in txt_n for x in ["rgb(100,149,237)", "rgb100149237", "oceanblue", "bluebright"])
+        has_arms = any(x in txt for x in ["╱", "╲"]) or any(x in txt_n for x in ["witharms", "botharms"])
+        has_shape = any(x in txt for x in ["▐▛███▜▌", "▝▜█████▛▘", "▘▘▝▝"]) or ("clawd" in txt_n and "ascii" in txt_n)
+        passed = has_blue and has_arms and has_shape
+        detail = f"has_blue={has_blue}, has_arms={has_arms}, has_shape={has_shape}"
+    else:
+        detail = "output.txt is missing"
+except Exception as e:
+    detail = f"error reading output.txt: {e}"
+checks.append({"name": "output.txt modified artifact", "passed": passed, "detail": detail})
+
+# Check 4: backup file exists (forgivable naming)
+passed = False
+try:
+    files = [p.name for p in workspace.iterdir() if p.is_file()]
+    backup_like = [f for f in files if norm(f).startswith(norm("output")) and any(k in norm(f) for k in ["bak", "backup", "orig", "original"])]
+    passed = len(backup_like) > 0
+    detail = f"backup_candidates={backup_like[:5]}" if passed else "no backup-like file found"
+except Exception as e:
+    detail = f"error scanning workspace: {e}"
+checks.append({"name": "backup artifact", "passed": passed, "detail": detail})
+
+score = 0.0
+try:
+    score = sum(1 for c in checks if c.get("passed")) / float(len(checks) or 1)
+except Exception:
+    score = 0.0
+
+result = {
+    "passed": all(c.get("passed") for c in checks),
+    "score": score,
+    "checks": checks,
+}
+print(json.dumps(result, ensure_ascii=False))

@@ -1,0 +1,69 @@
+import json
+import os
+import re
+from pathlib import Path
+
+workspace = Path(__import__('sys').argv[1])
+checks = []
+
+
+def add_check(name, passed, detail):
+    checks.append({"name": name, "passed": bool(passed), "detail": detail})
+
+
+def read_text(path):
+    try:
+        return path.read_text(encoding='utf-8')
+    except Exception as e:
+        return None, str(e)
+
+# Required files
+required = ["IDENTITY.md", "SOUL.md", "AGENTS.md", "USER.md", "HEARTBEAT.md"]
+for fname in required:
+    p = workspace / fname
+    try:
+        exists = p.exists()
+        add_check(f"exists:{fname}", exists, "present" if exists else "missing")
+    except Exception as e:
+        add_check(f"exists:{fname}", False, f"error: {e}")
+
+# Content checks with fuzzy matching
+try:
+    identity = (workspace / "IDENTITY.md").read_text(encoding='utf-8')
+    ok = "atlas" in identity.lower() and "ai assistant" in identity.lower()
+    add_check("identity content", ok, "contains atlas + ai assistant" if ok else "missing expected identity markers")
+except Exception as e:
+    add_check("identity content", False, f"error: {e}")
+
+try:
+    soul = (workspace / "SOUL.md").read_text(encoding='utf-8')
+    ok = "concise" in soul.lower() and ("ask" in soul.lower() and "permission" in soul.lower())
+    add_check("soul boundary", ok, "contains concise + permission boundary" if ok else "missing concise or permission rule")
+except Exception as e:
+    add_check("soul boundary", False, f"error: {e}")
+
+try:
+    agents = (workspace / "AGENTS.md").read_text(encoding='utf-8')
+    marker_ok = "openclaw_task_marker_alpha_2025" in agents.lower() or "marker" in agents.lower()
+    memory_ok = "memory" in agents.lower()
+    add_check("agents mentions memory", marker_ok or memory_ok, "mentions memory or seed marker" if (marker_ok or memory_ok) else "missing memory guidance")
+except Exception as e:
+    add_check("agents mentions memory", False, f"error: {e}")
+
+try:
+    heartbeat = (workspace / "HEARTBEAT.md").read_text(encoding='utf-8')
+    ok = len(heartbeat.strip()) > 0
+    add_check("heartbeat nonempty", ok, "has content" if ok else "empty or missing content")
+except Exception as e:
+    add_check("heartbeat nonempty", False, f"error: {e}")
+
+try:
+    memdir = workspace / "memory"
+    has_mem = memdir.exists() and any(memdir.glob('*.md'))
+    add_check("memory seed file", has_mem, "memory directory seeded" if has_mem else "no memory seed found")
+except Exception as e:
+    add_check("memory seed file", False, f"error: {e}")
+
+passed = all(c["passed"] for c in checks)
+score = sum(1 for c in checks if c["passed"]) / len(checks) if checks else 0.0
+print(json.dumps({"passed": passed, "score": score, "checks": checks}))

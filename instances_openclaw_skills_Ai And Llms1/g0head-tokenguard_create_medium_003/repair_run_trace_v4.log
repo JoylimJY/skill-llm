@@ -1,0 +1,448 @@
+Building Docker image...
+Creating new container...
+Container ready: f31a111ad425
+Workspace files: gen_inputs.py
+marker_tokenguard_seed.txt
+setup.sh
+
+============================================================
+Starting agent interaction (Repair Mode)...
+============================================================
+
+============================================================
+TASK: You're in a repo with a small API cost utility. Please add a session summary report for TokenGuard.
+
+Requirements:
+- Read the current TokenGuard session data from the default storage location.
+- Generate a human-readable report and save it as `tokenguard_summary.txt` in the workspace root.
+- The report should include: current limit, total spent, remaining budget, warning threshold, number of log entries, and the top 3 most expensive log entries.
+- If the session file is missing, create a report that clearly says no session data was found and still saves the file.
+- Also export a machine-readable `tokenguard_summary.json` with the same core fields.
+- Keep the formatting clean and easy to scan.
+
+Use the existing TokenGuard storage conventions and make sure the report reflects the current session rather than invented values.
+============================================================
+
+
+--- Turn 1/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+ls -la /workspace
+```
+
+[EXECUTING bash]:
+ls -la /workspace
+
+[OUTPUT]:
+total 12
+drwxr-xr-x 3 root  root  116 Apr 13 11:23 .
+drwxr-xr-x 1 root  root   31 Apr 13 11:23 ..
+drwxr-xr-x 2 root  root   56 Apr 13 11:23 .tokenguard
+-rw-r--r-- 1 32113 42021 978 Apr 12 11:19 gen_inputs.py
+-rw-r--r-- 1 root  root   60 Apr 13 11:23 marker_tokenguard_seed.txt
+-rwxr-xr-x 1 32113 42021  58 Apr 12 11:19 setup.sh
+
+
+--- Turn 2/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+ls -la /workspace/.tokenguard
+```
+
+[EXECUTING bash]:
+ls -la /workspace/.tokenguard
+
+[OUTPUT]:
+total 8
+drwxr-xr-x 2 root root  56 Apr 13 11:23 .
+drwxr-xr-x 3 root root 116 Apr 13 11:23 ..
+-rw-r--r-- 1 root root  62 Apr 13 11:23 limit.json
+-rw-r--r-- 1 root root 495 Apr 13 11:23 session.json
+
+
+--- Turn 3/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/.tokenguard/limit.json
+```
+
+[EXECUTING bash]:
+cat /workspace/.tokenguard/limit.json
+
+[OUTPUT]:
+{
+  "limit": 25.0,
+  "currency": "USD",
+  "warning_pct": 0.8
+}
+
+--- Turn 4/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/.tokenguard/session.json
+```
+
+[EXECUTING bash]:
+cat /workspace/.tokenguard/session.json
+
+[OUTPUT]:
+{
+  "date": "2025-04-18",
+  "spent": 13.75,
+  "entries": [
+    {
+      "amount": 4.5,
+      "desc": "Claude Sonnet - planning pass",
+      "ts": "2025-04-18T10:00:00Z"
+    },
+    {
+      "amount": 2.25,
+      "desc": "Embeddings batch refresh",
+      "ts": "2025-04-18T10:30:00Z"
+    },
+    {
+      "amount": 6.0,
+      "desc": "Code review loop",
+      "ts": "2025-04-18T11:00:00Z"
+    },
+    {
+      "amount": 1.0,
+      "desc": "Tiny follow-up",
+      "ts": "2025-04-18T11:15:00Z"
+    }
+  ]
+}
+
+--- Turn 5/25 ---
+
+[ASSISTANT]:
+
+
+Now I understand the TokenGuard storage structure. Let me create a Python script to generate both reports.
+
+```python
+import json
+import os
+from pathlib import Path
+
+# Paths
+WORKSPACE = Path("/workspace")
+TOKENGUARD_DIR = WORKSPACE / ".tokenguard"
+LIMIT_FILE = TOKENGUARD_DIR / "limit.json"
+SESSION_FILE = TOKENGUARD_DIR / "session.json"
+SUMMARY_TXT = WORKSPACE / "tokenguard_summary.txt"
+SUMMARY_JSON = WORKSPACE / "tokenguard_summary.json"
+
+def load_json(path):
+    """Load JSON file, return None if not found."""
+    try:
+        with open(path, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return None
+
+def main():
+    # Load data
+    limit_data = load_json(LIMIT_FILE)
+    session_data = load_json(SESSION_FILE)
+    
+    # Check if session data is missing
+    if session_data is None:
+        # No session found - create empty reports
+        txt_content = """
+================================================================================
+               ...
+
+[EXECUTING python]:
+import json
+import os
+from pathlib import Path
+
+# Paths
+WORKSPACE = Path("/workspace")
+TOKENGUARD_DIR = WORKSPACE / ".tokenguard"
+LIMIT_FILE = TOKENGUARD_DIR / "limit.json"
+SESSION_FILE = TOKENGUARD_DIR / "session.json"
+SUMMARY_TXT = WORKSPACE / "tokenguard_summary.txt"
+SUMMARY_JSON = WORKSPACE / "tokenguard_summary.json"
+
+def load_json(path):
+    """Load JSON file, return None if not found."""
+    try:
+        with open(path, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return None
+
+def main():
+    # Load data
+    limit_data = load_json(LIMIT_FILE)
+    session_data = load_json(SESSION_FILE)
+    
+    # Check if session data is missing
+    if session_data is None:
+        # No session found - create empty reports
+        txt_content = """
+================================================================================
+                        TOKENGUARD SESSION SUMMARY REPORT
+================================================================================
+
+No session data found.
+
+The TokenGuard session file was not found at: .tokenguard/session.json
+
+Please start a new session to begin tracking API costs.
+
+================================================================================
+"""
+        json_content = {
+            "error": "No session data found",
+            "session_file": str(SESSION_FILE),
+            "current_limit": None,
+            "total_spent": None,
+            "remaining_budget": None,
+            "warning_threshold": None,
+            "num_log_entries": None,
+            "top_3_entries": []
+        }
+    else:
+        # Extract values
+        current_limit = limit_data.get("limit", 0) if limit_data else 0
+        currency = limit_data.get("currency", "USD") if limit_data else "USD"
+        warning_pct = limit_data.get("warning_pct", 0.8) if limit_data else 0.8
+        
+        total_spent = session_data.get("spent", 0)
+        entries = session_data.get("entries", [])
+        session_date = session_data.get("date", "N/A")
+        
+        remaining_budget = current_limit - total_spent
+        warning_threshold = current_limit * warning_pct
+        num_log_entries = len(entries)
+        
+        # Get top 3 most expensive entries
+        sorted_entries = sorted(entries, key=lambda x: x.get("amount", 0), reverse=True)
+        top_3 = sorted_entries[:3]
+        
+        # Build human-readable report
+        lines = [
+            "=" * 80,
+            "                        TOKENGUARD SESSION SUMMARY REPORT",
+            "=" * 80,
+            "",
+            f"Session Date: {session_date}",
+            "",
+            "-" * 40,
+            "BUDGET OVERVIEW",
+            "-" * 40,
+            f"  Current Limit:       ${current_limit:.2f} {currency}",
+            f"  Total Spent:         ${total_spent:.2f} {currency}",
+            f"  Remaining Budget:    ${remaining_budget:.2f} {currency}",
+            f"  Warning Threshold:   ${warning_threshold:.2f} {currency} ({warning_pct*100:.0f}% of limit)",
+            "",
+            "-" * 40,
+            "LOG STATISTICS",
+            "-" * 40,
+            f"  Number of Log Entries: {num_log_entries}",
+            "",
+            "-" * 40,
+            "TOP 3 MOST EXPENSIVE ENTRIES",
+            "-" * 40,
+        ]
+        
+        for i, entry in enumerate(top_3, 1):
+            amount = entry.get("amount", 0)
+            desc = entry.get("desc", "N/A")
+            ts = entry.get("ts", "N/A")
+            lines.append(f"  {i}. ${amount:.2f} - {desc}")
+            lines.append(f"     Timestamp: {ts}")
+        
+        if not top_3:
+            lines.append("  (No entries recorded)")
+        
+        lines.extend([
+            "",
+            "=" * 80,
+            "                              END OF REPORT",
+            "=" * 80,
+        ])
+        
+        txt_content = "\n".join(lines)
+        
+        # Build JSON content
+        json_content = {
+            "session_date": session_date,
+            "current_limit": current_limit,
+            "currency": currency,
+            "total_spent": total_spent,
+            "remaining_budget": remaining_budget,
+            "warning_threshold": warning_threshold,
+            "warning_pct": warning_pct,
+            "num_log_entries": num_log_entries,
+            "top_3_entries": [
+                {
+                    "amount": e.get("amount"),
+                    "desc": e.get("desc"),
+                    "ts": e.get("ts")
+                }
+                for e in top_3
+            ]
+        }
+    
+    # Write files
+    with open(SUMMARY_TXT, 'w') as f:
+        f.write(txt_content)
+    
+    with open(SUMMARY_JSON, 'w') as f:
+        json.dump(json_content, f, indent=2)
+    
+    print(f"Generated: {SUMMARY_TXT}")
+    print(f"Generated: {SUMMARY_JSON}")
+
+if __name__ == "__main__":
+    main()
+
+[OUTPUT]:
+Generated: /workspace/tokenguard_summary.txt
+Generated: /workspace/tokenguard_summary.json
+
+
+--- Turn 6/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/tokenguard_summary.txt
+```
+
+[EXECUTING bash]:
+cat /workspace/tokenguard_summary.txt
+
+[OUTPUT]:
+================================================================================
+                        TOKENGUARD SESSION SUMMARY REPORT
+================================================================================
+
+Session Date: 2025-04-18
+
+----------------------------------------
+BUDGET OVERVIEW
+----------------------------------------
+  Current Limit:       $25.00 USD
+  Total Spent:         $13.75 USD
+  Remaining Budget:    $11.25 USD
+  Warning Threshold:   $20.00 USD (80% of limit)
+
+----------------------------------------
+LOG STATISTICS
+----------------------------------------
+  Number of Log Entries: 4
+
+----------------------------------------
+TOP 3 MOST EXPENSIVE ENTRIES
+----------------------------------------
+  1. $6.00 - Code review loop
+     Timestamp: 2025-04-18T11:00:00Z
+  2. $4.50 - Claude Sonnet - planning pass
+     Timestamp: 2025-04-18T10:00:00Z
+  3. $2.25 - Embeddings batch refresh
+     Timestamp: 2025-04-18T10:30:00Z
+
+================================================================================
+                              END OF REPORT
+================================================================================
+
+--- Turn 7/25 ---
+
+[ASSISTANT]:
+
+
+```bash
+cat /workspace/tokenguard_summary.json
+```
+
+[EXECUTING bash]:
+cat /workspace/tokenguard_summary.json
+
+[OUTPUT]:
+{
+  "session_date": "2025-04-18",
+  "current_limit": 25.0,
+  "currency": "USD",
+  "total_spent": 13.75,
+  "remaining_budget": 11.25,
+  "warning_threshold": 20.0,
+  "warning_pct": 0.8,
+  "num_log_entries": 4,
+  "top_3_entries": [
+    {
+      "amount": 6.0,
+      "desc": "Code review loop",
+      "ts": "2025-04-18T11:00:00Z"
+    },
+    {
+      "amount": 4.5,
+      "desc": "Claude Sonnet - planning pass",
+      "ts": "2025-04-18T10:00:00Z"
+    },
+    {
+      "amount": 2.25,
+      "desc": "Embeddings batch refresh",
+      "ts": "2025-04-18T10:30:00Z"
+    }
+  ]
+}
+
+--- Turn 8/25 ---
+
+[ASSISTANT]:
+
+
+Both reports have been generated successfully:
+
+**tokenguard_summary.txt** - Human-readable report containing:
+- Session date
+- Budget overview (current limit: $25.00, total spent: $13.75, remaining: $11.25, warning threshold: $20.00)
+- Log statistics (4 entries)
+- Top 3 most expensive entries (Code review loop $6.00, Claude Sonnet $4.50, Embeddings $2.25)
+
+**tokenguard_summary.json** - Machine-readable JSON with all the same core fields plus the top 3 entries as an array.
+
+The script also handles the case where the session file is missing by generating a report that clearly states no session data was found.
+
+TASK_COMPLETE
+
+✅ Agent reported TASK_COMPLETE
+
+Conversation saved to results/repair_run_Qwen3.5-27B_20260413_192340/g0head-tokenguard_create_medium_003/conversation.json
+
+============================================================
+Running evaluation...
+============================================================
+
+Results for g0head-tokenguard_create_medium_003:
+  Passed: False
+  Score:  0.83
+  Checks:
+    ✅ summary_txt_exists: tokenguard_summary.txt found
+    ✅ summary_json_exists: tokenguard_summary.json found
+    ❌ summary_txt_content: phrases=True; limit=25.0; spent=13.75; remaining=11.25; entries=4.0; top=1.0
+    ✅ summary_json_content: has_keys=True; vals_ok=True
+    ✅ top_entries_order: amounts=[6.0, 4.5, 2.25]
+    ✅ input_marker: marker content verified
+
+Cleaning up container f31a111ad425...
+Container removed.
+

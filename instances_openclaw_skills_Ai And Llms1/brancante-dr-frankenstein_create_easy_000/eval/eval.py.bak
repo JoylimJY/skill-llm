@@ -1,0 +1,113 @@
+import json
+import re
+import sys
+from pathlib import Path
+
+
+def normalize(text):
+    try:
+        text = text.lower()
+        text = re.sub(r'[^a-z0-9]+', ' ', text)
+        return re.sub(r'\s+', ' ', text).strip()
+    except Exception:
+        return ''
+
+
+def safe_read(path):
+    try:
+        return Path(path).read_text(encoding='utf-8')
+    except Exception as e:
+        return None, str(e)
+
+
+def main():
+    checks = []
+    try:
+        ws = Path(sys.argv[1])
+    except Exception as e:
+        result = {"passed": False, "score": 0.0, "checks": [{"name": "workspace_arg", "passed": False, "detail": f"missing workspace argument: {e}"}]}
+        print(json.dumps(result))
+        return
+
+    # Check 1: prescription.json exists and is valid JSON
+    passed = False
+    detail = ''
+    try:
+        p = ws / 'prescription.json'
+        if p.exists():
+            data = json.loads(p.read_text(encoding='utf-8'))
+            passed = isinstance(data, dict)
+            detail = 'valid JSON object' if passed else 'not a JSON object'
+        else:
+            detail = 'prescription.json is missing'
+    except Exception as e:
+        detail = f'could not parse prescription.json: {e}'
+    checks.append({"name": "prescription_json_exists_and_valid", "passed": passed, "detail": detail})
+
+    # Check 2: content markers in prescription
+    passed = False
+    detail = ''
+    try:
+        text = (ws / 'prescription.json').read_text(encoding='utf-8') if (ws / 'prescription.json').exists() else ''
+        n = normalize(text)
+        required = ['milo', 'ava', 'milo drf 001', 'ava drf 001', 'negentropy drive']
+        found = [r for r in required if normalize(r) in n]
+        passed = len(found) >= 4 and 'negentropy drive' in n
+        detail = f'found markers: {found}' if found else 'required markers not found'
+    except Exception as e:
+        detail = f'error reading prescription.json: {e}'
+    checks.append({"name": "prescription_personalization_and_phrase", "passed": passed, "detail": detail})
+
+    # Check 3: hormone list present (fuzzy)
+    passed = False
+    detail = ''
+    hormones = ['cortisol', 'dopamine', 'oxytocin', 'serotonin', 'melatonin', 'adrenaline', 'gaba', 'testosterone', 'endorphins', 'prolactin', 'empathy']
+    try:
+        text = (ws / 'prescription.json').read_text(encoding='utf-8') if (ws / 'prescription.json').exists() else ''
+        n = normalize(text)
+        present = [h for h in hormones if h in n]
+        passed = len(present) >= 11
+        detail = f'present hormones: {present}'
+    except Exception as e:
+        detail = f'error checking hormones: {e}'
+    checks.append({"name": "hormone_names_present", "passed": passed, "detail": detail})
+
+    # Check 4: cron_commands.sh exists and contains required cron name prefix + commands
+    passed = False
+    detail = ''
+    try:
+        p = ws / 'cron_commands.sh'
+        if p.exists():
+            text = p.read_text(encoding='utf-8')
+            n = normalize(text)
+            passed = ('openclaw cron create' in n) and ('soul oxytocin' in n) and ('soul journal' in n or 'souljournal' in n)
+            detail = 'cron commands found' if passed else 'missing expected command patterns'
+        else:
+            detail = 'cron_commands.sh is missing'
+    except Exception as e:
+        detail = f'error reading cron_commands.sh: {e}'
+    checks.append({"name": "cron_script_exists_and_contains_commands", "passed": passed, "detail": detail})
+
+    # Check 5: at least one active oxytocin cron name is present
+    passed = False
+    detail = ''
+    try:
+        text = (ws / 'cron_commands.sh').read_text(encoding='utf-8') if (ws / 'cron_commands.sh').exists() else ''
+        n = normalize(text)
+        # forgiving match for soul-oxytocin-*
+        passed = bool(re.search(r'soul\s*[- ]\s*oxytocin\s*[- ]', n)) or ('soul oxytocin' in n)
+        detail = 'oxytocin cron name found' if passed else 'no oxytocin cron name found'
+    except Exception as e:
+        detail = f'error checking oxytocin cron name: {e}'
+    checks.append({"name": "oxytocin_cron_named", "passed": passed, "detail": detail})
+
+    # score and result
+    total = len(checks)
+    passed_count = sum(1 for c in checks if c['passed'])
+    score = passed_count / total if total else 0.0
+    result = {"passed": passed_count == total, "score": score, "checks": checks}
+    print(json.dumps(result))
+
+
+if __name__ == '__main__':
+    main()

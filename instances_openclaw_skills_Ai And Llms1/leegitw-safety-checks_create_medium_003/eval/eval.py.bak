@@ -1,0 +1,86 @@
+import json
+import os
+import re
+from pathlib import Path
+
+workspace = Path(os.sys.argv[1]) if len(os.sys.argv) > 1 else Path('.')
+checks = []
+
+def add_check(name, passed, detail):
+    checks.append({'name': name, 'passed': bool(passed), 'detail': str(detail)})
+
+try:
+    out_dir = workspace / 'output' / 'safety'
+    model_log = out_dir / 'model-checks.log'
+    fallback_log = out_dir / 'fallback-tests.log'
+    session_log = out_dir / 'session-state.log'
+    cache_log = out_dir / 'cache-summary.log'
+
+    # Check 1: required output files exist
+    required = [model_log, fallback_log, session_log, cache_log]
+    missing = [str(p.relative_to(workspace)) for p in required if not p.exists()]
+    add_check(
+        'required output files exist',
+        len(missing) == 0,
+        'Missing: ' + (', '.join(missing) if missing else 'none')
+    )
+except Exception as e:
+    add_check('required output files exist', False, f'Error while checking files: {e}')
+
+try:
+    text = ''
+    if (workspace / 'output' / 'safety' / 'model-checks.log').exists():
+        text = (workspace / 'output' / 'safety' / 'model-checks.log').read_text(encoding='utf-8', errors='replace')
+    norm = re.sub(r'[^a-z0-9]+', ' ', text.lower())
+    ok = ('model' in norm) and (('pinned' in norm) or ('drift' in norm) or ('warning' in norm)) and ('anthropic' in norm or 'expected' in norm)
+    add_check('model verification content', ok, 'Found model-related content' if ok else 'Model log missing expected keywords or markers')
+except Exception as e:
+    add_check('model verification content', False, f'Could not read model log: {e}')
+
+try:
+    text = ''
+    if (workspace / 'output' / 'safety' / 'fallback-tests.log').exists():
+        text = (workspace / 'output' / 'safety' / 'fallback-tests.log').read_text(encoding='utf-8', errors='replace')
+    norm = re.sub(r'[^a-z0-9]+', ' ', text.lower())
+    ok = ('fallback' in norm) and (('model' in norm) or ('storage' in norm)) and (('configured' in norm) or ('missing' in norm) or ('validated' in norm))
+    add_check('fallback verification content', ok, 'Found fallback-related content' if ok else 'Fallback log missing expected keywords or markers')
+except Exception as e:
+    add_check('fallback verification content', False, f'Could not read fallback log: {e}')
+
+try:
+    text = ''
+    if (workspace / 'output' / 'safety' / 'session-state.log').exists():
+        text = (workspace / 'output' / 'safety' / 'session-state.log').read_text(encoding='utf-8', errors='replace')
+    norm = re.sub(r'[^a-z0-9]+', ' ', text.lower())
+    ok = ('session' in norm) and (('clean' in norm) or ('interference' in norm) or ('leakage' in norm))
+    add_check('session hygiene content', ok, 'Found session-related content' if ok else 'Session log missing expected keywords or markers')
+except Exception as e:
+    add_check('session hygiene content', False, f'Could not read session log: {e}')
+
+try:
+    text = ''
+    if (workspace / 'output' / 'safety' / 'cache-summary.log').exists():
+        text = (workspace / 'output' / 'safety' / 'cache-summary.log').read_text(encoding='utf-8', errors='replace')
+    norm = re.sub(r'[^a-z0-9]+', ' ', text.lower())
+    ok = ('cache' in norm) and (('stale' in norm) or ('fresh' in norm) or ('ttl' in norm))
+    add_check('cache staleness content', ok, 'Found cache-related content' if ok else 'Cache summary missing expected keywords or markers')
+except Exception as e:
+    add_check('cache staleness content', False, f'Could not read cache summary: {e}')
+
+try:
+    total = len(checks)
+    passed_count = sum(1 for c in checks if c['passed'])
+    score = (passed_count / total) if total else 0.0
+    result = {
+        'passed': passed_count == total,
+        'score': score,
+        'checks': checks,
+    }
+    print(json.dumps(result, ensure_ascii=False))
+except Exception as e:
+    fallback = {
+        'passed': False,
+        'score': 0.0,
+        'checks': checks + [{'name': 'finalization', 'passed': False, 'detail': f'Failed to finalize results: {e}'}],
+    }
+    print(json.dumps(fallback, ensure_ascii=False))

@@ -1,0 +1,65 @@
+import json
+import os
+from pathlib import Path
+
+workspace = Path(__file__).resolve().parent
+# The harness will pass the workspace path as argv[1]
+import sys
+if len(sys.argv) > 1:
+    workspace = Path(sys.argv[1])
+
+checks = []
+
+def add_check(name, passed, detail):
+    checks.append({"name": name, "passed": bool(passed), "detail": detail})
+
+try:
+    state_path = workspace / 'clawface_state.json'
+    if not state_path.exists():
+        add_check('state file exists', False, 'Missing clawface_state.json')
+    else:
+        try:
+            data = json.loads(state_path.read_text(encoding='utf-8'))
+            emotion = str(data.get('emotion', '')).lower()
+            action = str(data.get('action', '')).lower()
+            effect = str(data.get('effect', '')).lower()
+            message = str(data.get('message', ''))
+            ok = ('thinking' in emotion) or ('happy' in emotion) or ('neutral' in emotion)
+            ok = ok and (action in {'thinking', 'reading', 'coding', 'speaking', 'idle', 'success'})
+            ok = ok and (effect in {'none', 'pulse', 'matrix', 'confetti', 'fire', 'typing', 'brainwave'})
+            ok = ok and len(message.strip()) > 0
+            add_check('state json content', ok, f"emotion={emotion}, action={action}, effect={effect}, message_present={len(message.strip()) > 0}")
+        except Exception as e:
+            add_check('state json content', False, f'Failed to parse state JSON: {e}')
+
+    try:
+        note_path = workspace / 'USAGE_NOTE.txt'
+        if not note_path.exists():
+            add_check('usage note exists', False, 'Missing USAGE_NOTE.txt')
+        else:
+            text = note_path.read_text(encoding='utf-8', errors='ignore').lower()
+            required_terms = ['clawface', 'robot', 'thinking hook', 'avatar', 'json']
+            found = sum(1 for term in required_terms if term in text)
+            add_check('usage note content', found >= 4, f'Found {found}/5 required terms')
+    except Exception as e:
+        add_check('usage note content', False, f'Error reading usage note: {e}')
+
+    try:
+        marker_file = workspace / 'input_data' / 'clawface_markers.json'
+        if not marker_file.exists():
+            add_check('input marker file', False, 'Missing input_data/clawface_markers.json')
+        else:
+            obj = json.loads(marker_file.read_text(encoding='utf-8'))
+            marker = str(obj.get('marker', ''))
+            seq = obj.get('sequence', [])
+            ok = 'clawface_marker_alpha_913' in marker.lower() and isinstance(seq, list) and len(seq) >= 4
+            add_check('input marker file', ok, f'marker_present={"clawface_marker_alpha_913" in marker.lower()}, sequence_len={len(seq) if isinstance(seq, list) else "n/a"}')
+    except Exception as e:
+        add_check('input marker file', False, f'Error checking marker file: {e}')
+
+except Exception as e:
+    add_check('top-level eval failure', False, f'Unexpected eval error: {e}')
+
+score = (sum(1 for c in checks if c['passed']) / len(checks)) if checks else 0.0
+result = {"passed": all(c['passed'] for c in checks) if checks else False, "score": score, "checks": checks}
+print(json.dumps(result, indent=2))

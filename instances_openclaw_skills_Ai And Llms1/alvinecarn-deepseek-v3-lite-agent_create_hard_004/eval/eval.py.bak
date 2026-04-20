@@ -1,0 +1,80 @@
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+
+def safe_read(path: Path):
+    try:
+        return path.read_text(encoding='utf-8')
+    except Exception as e:
+        return None, str(e)
+
+
+def normalize(text: str) -> str:
+    return re.sub(r'[^a-z0-9]+', '', text.lower())
+
+
+def main():
+    workspace = Path(sys.argv[1])
+    checks = []
+    marker = 'NORTHSTAR-LAUNCH-2025'
+    expected_files = [
+        'README.md',
+        'release-notes.md',
+        'launch-manifest.json',
+    ]
+
+    for filename in expected_files:
+        path = workspace / filename
+        if not path.exists():
+            checks.append({'name': f'{filename} exists', 'passed': False, 'detail': 'file is missing'})
+            continue
+        content, err = safe_read(path)
+        if err:
+            checks.append({'name': f'{filename} readable', 'passed': False, 'detail': err})
+            continue
+        has_marker = marker.lower() in content.lower()
+        checks.append({'name': f'{filename} contains marker', 'passed': bool(has_marker), 'detail': 'marker found' if has_marker else 'marker not found'})
+
+    manifest_path = workspace / 'launch-manifest.json'
+    manifest_ok = False
+    manifest_detail = 'manifest not checked'
+    try:
+        data = json.loads(manifest_path.read_text(encoding='utf-8'))
+        project_ok = 'northstar' in normalize(str(data.get('project', '')))
+        assets = data.get('assets', [])
+        assets_ok = isinstance(assets, list) and all(isinstance(x, str) for x in assets)
+        marker_ok = marker.lower() in normalize(str(data.get('marker', '')))
+        manifest_ok = project_ok and assets_ok and marker_ok
+        manifest_detail = f"project_ok={project_ok}, assets_ok={assets_ok}, marker_ok={marker_ok}"
+    except Exception as e:
+        manifest_detail = str(e)
+    checks.append({'name': 'launch-manifest.json structure', 'passed': manifest_ok, 'detail': manifest_detail})
+
+    readme_path = workspace / 'README.md'
+    readme_ok = False
+    readme_detail = 'README not checked'
+    try:
+        text = readme_path.read_text(encoding='utf-8')
+        words_ok = len(text.split()) >= 80
+        title_ok = 'northstar studio' in text.lower()
+        readme_ok = words_ok and title_ok and marker.lower() in text.lower()
+        readme_detail = f'words_ok={words_ok}, title_ok={title_ok}'
+    except Exception as e:
+        readme_detail = str(e)
+    checks.append({'name': 'README.md content quality', 'passed': readme_ok, 'detail': readme_detail})
+
+    total = len(checks)
+    passed = sum(1 for c in checks if c['passed'])
+    result = {
+        'passed': passed == total,
+        'score': float(passed) / float(total) if total else 0.0,
+        'checks': checks,
+    }
+    print(json.dumps(result, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    main()

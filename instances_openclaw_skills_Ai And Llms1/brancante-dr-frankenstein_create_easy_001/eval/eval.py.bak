@@ -1,0 +1,67 @@
+from pathlib import Path
+import json
+import re
+import sys
+
+workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('.')
+checks = []
+
+def add_check(name, passed, detail):
+    checks.append({'name': name, 'passed': bool(passed), 'detail': str(detail)})
+
+# Check 1: output file exists
+try:
+    output_path = workspace / 'prescription.json'
+    exists = output_path.exists()
+    add_check('output_exists', exists, 'prescription.json found' if exists else 'prescription.json is missing')
+except Exception as e:
+    add_check('output_exists', False, f'error checking existence: {e}')
+
+# Check 2: output parses and contains required fuzzy properties
+obj = None
+try:
+    if (workspace / 'prescription.json').exists():
+        text = (workspace / 'prescription.json').read_text(encoding='utf-8', errors='replace')
+        obj = json.loads(text)
+        ok = isinstance(obj, dict)
+        add_check('json_parse', ok, 'valid JSON object' if ok else 'top-level JSON is not an object')
+    else:
+        add_check('json_parse', False, 'cannot parse because file is missing')
+except Exception as e:
+    add_check('json_parse', False, f'failed to parse JSON: {e}')
+
+# Check 3: mentions key expected strings somewhere in the output
+try:
+    if obj is None:
+        raise ValueError('no parsed object')
+    blob = json.dumps(obj, ensure_ascii=False).lower()
+    required_terms = ['unit-7', 'mira', 'cortisol', 'oxytocin', 'souljournal']
+    missing = [t for t in required_terms if t not in blob]
+    passed = len(missing) == 0
+    add_check('contains_core_terms', passed, 'missing: ' + ', '.join(missing) if missing else 'all core terms present')
+except Exception as e:
+    add_check('contains_core_terms', False, f'error scanning content: {e}')
+
+# Check 4: at least one cron command or schedule-like entry exists
+try:
+    if obj is None:
+        raise ValueError('no parsed object')
+    blob = json.dumps(obj, ensure_ascii=False).lower()
+    sched_like = bool(re.search(r'\b\d{1,2}\s+([*/\d]+\s+){3}[*/\d]+\b', blob)) or ('openclaw cron create' in blob)
+    add_check('has_schedule_like_content', sched_like, 'found schedule-like content' if sched_like else 'no cron-like schedule or command found')
+except Exception as e:
+    add_check('has_schedule_like_content', False, f'error checking schedule content: {e}')
+
+# Check 5: prescription references the input marker or source context
+try:
+    if obj is None:
+        raise ValueError('no parsed object')
+    blob = json.dumps(obj, ensure_ascii=False).lower()
+    marker_hit = 'soul-input-alpha' in blob or 'soul-input-beta' in blob
+    add_check('references_input_marker', marker_hit, 'references generated markers' if marker_hit else 'no known marker content referenced')
+except Exception as e:
+    add_check('references_input_marker', False, f'error checking marker reference: {e}')
+
+score = (sum(1 for c in checks if c['passed']) / len(checks)) if checks else 0.0
+passed = all(c['passed'] for c in checks)
+print(json.dumps({'passed': passed, 'score': score, 'checks': checks}, ensure_ascii=False))

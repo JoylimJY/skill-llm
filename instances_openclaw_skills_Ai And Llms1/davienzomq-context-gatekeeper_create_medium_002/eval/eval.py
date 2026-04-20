@@ -1,0 +1,133 @@
+import json
+import os
+import re
+from pathlib import Path
+
+
+def safe_read(path):
+    try:
+        return Path(path).read_text(encoding='utf-8'), None
+    except Exception as e:
+        return None, str(e)
+
+
+def fuzzy_contains(text, needle):
+    try:
+        t = re.sub(r'[^a-z0-9]+', ' ', text.lower())
+        n = re.sub(r'[^a-z0-9]+', ' ', needle.lower())
+        return n.strip() in t
+    except Exception:
+        return False
+
+
+def main(workspace):
+    checks = []
+    ws = Path(workspace)
+    summary_path = ws / 'context' / 'current-summary.md'
+    history_path = ws / 'context' / 'history.txt'
+
+    summary, err = safe_read(summary_path)
+    if err is None:
+        checks.append({
+            'name': 'summary file exists',
+            'passed': True,
+            'detail': 'context/current-summary.md was found.'
+        })
+    else:
+        summary = ''
+        checks.append({
+            'name': 'summary file exists',
+            'passed': False,
+            'detail': f'missing or unreadable summary file: {err}'
+        })
+
+    history, err = safe_read(history_path)
+    if err is None:
+        checks.append({
+            'name': 'history file exists',
+            'passed': True,
+            'detail': 'context/history.txt was found.'
+        })
+    else:
+        history = ''
+        checks.append({
+            'name': 'history file exists',
+            'passed': False,
+            'detail': f'missing or unreadable history file: {err}'
+        })
+
+    headings_ok = False
+    try:
+        headings_ok = all(fuzzy_contains(summary, h) for h in ['Compact Summary', 'Pending Actions', 'Recent Turns'])
+        checks.append({
+            'name': 'required sections present',
+            'passed': headings_ok,
+            'detail': 'Found all required section headings.' if headings_ok else 'One or more required headings are missing.'
+        })
+    except Exception as e:
+        checks.append({
+            'name': 'required sections present',
+            'passed': False,
+            'detail': f'failed while checking headings: {e}'
+        })
+
+    marker_ok = False
+    try:
+        marker_ok = 'CTX-GATEKEEPER-2026-02-06' in summary or 'MARKER:CTX-GATEKEEPER-2026-02-06' in summary or 'CTX-GATEKEEPER' in history
+        checks.append({
+            'name': 'marker content preserved',
+            'passed': marker_ok,
+            'detail': 'Marker-related content was detected.' if marker_ok else 'Expected marker content was not detected.'
+        })
+    except Exception as e:
+        checks.append({
+            'name': 'marker content preserved',
+            'passed': False,
+            'detail': f'failed while checking marker content: {e}'
+        })
+
+    recent_ok = False
+    try:
+        recent_ok = fuzzy_contains(summary, 'Você sabe todas nossas regras?') and fuzzy_contains(summary, 'Qual nome dos 12 discípulos de Jesus?')
+        checks.append({
+            'name': 'recent turns included',
+            'passed': recent_ok,
+            'detail': 'Recent turns from the provided history appear in the summary.' if recent_ok else 'Recent turns are missing or incomplete.'
+        })
+    except Exception as e:
+        checks.append({
+            'name': 'recent turns included',
+            'passed': False,
+            'detail': f'failed while checking recent turns: {e}'
+        })
+
+    pending_ok = False
+    try:
+        pending_ok = fuzzy_contains(summary, 'Nenhuma pendência') or fuzzy_contains(summary, 'pend')
+        checks.append({
+            'name': 'pending section populated',
+            'passed': pending_ok,
+            'detail': 'Pending-actions section has content.' if pending_ok else 'Pending-actions section seems empty.'
+        })
+    except Exception as e:
+        checks.append({
+            'name': 'pending section populated',
+            'passed': False,
+            'detail': f'failed while checking pending section: {e}'
+        })
+
+    passed_count = sum(1 for c in checks if c.get('passed'))
+    total = len(checks) if checks else 1
+    score = passed_count / total
+    result = {
+        'passed': passed_count == total,
+        'score': score,
+        'checks': checks,
+    }
+    print(json.dumps(result, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    import sys
+    workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(".")
+    main(workspace)

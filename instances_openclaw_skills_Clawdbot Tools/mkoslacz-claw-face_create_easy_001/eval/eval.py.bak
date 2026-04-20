@@ -1,0 +1,50 @@
+import json
+import os
+from pathlib import Path
+
+workspace = Path(__import__('sys').argv[1]) if len(__import__('sys').argv) > 1 else Path('.')
+checks = []
+
+def add_check(name, passed, detail):
+    checks.append({'name': name, 'passed': bool(passed), 'detail': detail})
+
+try:
+    state_path = workspace / 'avatar_state.json'
+    note_path = workspace / 'launch_note.txt'
+
+    if state_path.exists():
+        try:
+            data = json.loads(state_path.read_text(encoding='utf-8'))
+            marker_ok = 'emotion' in data and 'action' in data and 'effect' in data and 'message' in data
+            cheerful = str(data.get('emotion', '')).lower() in {'happy', 'excited', 'proud'}
+            add_check('avatar_state_present_and_valid', marker_ok and cheerful, f"keys={sorted(list(data.keys())) if isinstance(data, dict) else 'non-dict'}, emotion={data.get('emotion') if isinstance(data, dict) else 'n/a'}")
+        except Exception as e:
+            add_check('avatar_state_present_and_valid', False, f'Could not parse avatar_state.json: {e}')
+    else:
+        add_check('avatar_state_present_and_valid', False, 'avatar_state.json is missing')
+
+    if note_path.exists():
+        try:
+            text = note_path.read_text(encoding='utf-8')
+            ok = 'demo' in text.lower() and 'clawface' in text.lower() and 'mode' in text.lower()
+            add_check('launch_note_present', ok, 'launch_note.txt exists and contains required launch guidance' if ok else 'launch_note.txt missing required keywords')
+        except Exception as e:
+            add_check('launch_note_present', False, f'Could not read launch_note.txt: {e}')
+    else:
+        add_check('launch_note_present', False, 'launch_note.txt is missing')
+
+    expected_input = workspace / 'README_INPUT.txt'
+    if expected_input.exists():
+        try:
+            txt = expected_input.read_text(encoding='utf-8')
+            add_check('input_marker_exists', 'clawface_marker' in txt.lower(), 'Deterministic marker found in README_INPUT.txt' if 'clawface_marker' in txt.lower() else 'Marker not found in README_INPUT.txt')
+        except Exception as e:
+            add_check('input_marker_exists', False, f'Could not read README_INPUT.txt: {e}')
+    else:
+        add_check('input_marker_exists', False, 'README_INPUT.txt is missing')
+except Exception as e:
+    add_check('evaluation_bootstrap', False, f'Unexpected evaluation error: {e}')
+
+passed = all(c['passed'] for c in checks)
+score = sum(1 for c in checks if c['passed']) / len(checks) if checks else 0.0
+print(json.dumps({'passed': passed, 'score': score, 'checks': checks}, ensure_ascii=False))

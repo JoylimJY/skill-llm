@@ -135,7 +135,7 @@ uv run python -m src.run synthesize --skill-dir anthropic-skills/pdf --num 6
 构建 Docker 镜像 + 创建容器 + 运行 gen_inputs.py + setup.sh。构建失败时自动调用 Claude 修复 Dockerfile（最多重试 3 次）。
 
 ```bash
-uv run python -m src.run build --instance instances/pdf_merge_easy_000
+uv run python -m src.run build --instance instances_awesome-claude-skills-master/artifacts-builder_create_hard_005
 ```
 
 ### 3. 任务质量过滤 (Filter)
@@ -152,7 +152,8 @@ uv run python -m src.run build --instance instances/pdf_merge_easy_000
 # 过滤所有已构建的 instance（默认 16 次 trial，4 并行）
 uv run python -m src.run filter \
     --api-base http://localhost:8200/v1 \
-    --model Qwen3.5-27B
+    --model Qwen3.5-27B \
+    --output-dir instances_anthropic-skills
 
 # 过滤单个 instance
 uv run python -m src.run filter \
@@ -175,10 +176,10 @@ uv run python -m src.run filter \
 
 ```bash
 # Agent 多轮交互完成任务 (结果保存到 results/{run_name}/)
-uv run python agent_runner.py --instance instances/pdf_merge_easy_000 \
-    --api-base http://localhost:8100/v1 \
-    --model Qwen/Qwen3-8B \
-    --run-dir results/Qwen3-8B_round1
+uv run python agent_runner.py --instance instances_stage1-final/algorithmic-art_create_easy_000 \
+    --api-base http://localhost:8300/v1 \
+    --model Qwen3.5-27B \
+    --run-dir results/test
 
 # 或仅运行评测（需要容器已存在）
 uv run python -m src.run evaluate --instance instances/pdf_merge_easy_000 \
@@ -262,6 +263,7 @@ bash scripts/01_synthesize.sh
 bash scripts/02_build.sh
 ```
 
+
 ### `02.5_filter.sh` — 批量过滤
 
 对所有已构建成功的 instance 运行质量过滤。通过环境变量配置参数：
@@ -271,11 +273,12 @@ bash scripts/02_build.sh
 bash scripts/02.5_filter.sh
 
 # 自定义配置
-FILTER_API_BASE=http://localhost:8200/v1 \
+FILTER_INSTANCES_DIR="instances_openclaw_skills_Clawdbot Tools" \
+FILTER_API_BASE=http://localhost:8300/v1 \
 FILTER_MODEL=Qwen3.5-27B \
-FILTER_NUM_TRIALS=16 \
+FILTER_NUM_TRIALS=4 \
 FILTER_CONCURRENCY=4 \
-bash scripts/02.5_filter.sh
+bash scripts/02.5_filter.sh 
 ```
 
 脚本结束后会打印每个 instance 的过滤状态汇总表。
@@ -326,9 +329,9 @@ CUDA_VISIBLE_DEVICES=4 vllm serve Qwen/Qwen3-8B --port 8100 --max-model-len 8192
 
 # 2. 构建 + Agent 交互 + 评测（--cleanup 自动清理容器）
 uv run python -m src.run build --instance instances/pdf_merge_easy_000
-uv run python agent_runner.py --instance instances/pdf_merge_easy_000 \
-    --api-base http://localhost:8100/v1 --model Qwen/Qwen3-8B \
-    --run-dir results/Qwen3-8B_exp1 --cleanup
+uv run python agent_runner.py --instance "instances_too_easy_for_9b/canvas-design_create_easy_000 copy" \
+    --api-base http://localhost:8300/v1 --model Qwen3.5-9B \
+    --run-dir results/Qwen3-8B_exp1 --cleanup --force
 
 # 3. 查看当轮统计
 cat results/Qwen3-8B_exp1/summary.json
@@ -345,3 +348,58 @@ uv run python -m src.run cleanup
 - `openai >= 2.29.0` — OpenAI-compatible API (Agent 调用)
 - Docker — 沙箱环境
 - vLLM 或任何 OpenAI-compatible API — 模型服务
+
+uv run python -m src.run filter \
+  --api-base http://localhost:8300/v1 \
+  --model Qwen3.5-27B \
+  --output-dir instances_stage1-final \
+  --num-trials 4 \
+  --concurrency 4
+
+uv run python -m src.run synthesize \
+    --skill-dir awesome-claude-skills-master/artifacts-builder \
+    --num 1 \
+    --output-dir temp_instances
+
+docker run --gpus all \
+    --ipc=host \
+    -p 8300:8000 \
+    -v /home/test/test12/models:/models \
+    vllm/vllm-openai:latest \
+    /models/Qwen3.5-27B \
+    --served-model-name "Qwen3.5-27B" \
+    --tensor-parallel-size 8 \
+    --max-model-len 16384 \
+    --gpu-memory-utilization 0.9 \
+    --trust-remote-code \
+    --reasoning-parser qwen3 \
+
+TERMINUS_FILTER_INSTANCES_DIR="instances_openclaw_skills_Cli Utilities&Coding Agents And Ides" \
+TERMINUS_FILTER_PROVIDER=openai \
+TERMINUS_FILTER_MODEL=gpt-oss-120b \
+TERMINUS_FILTER_API_BASE="***REMOVED***/v1" \
+TERMINUS_FILTER_API_KEY="***REMOVED***" \
+TERMINUS_FILTER_NUM_TRIALS=4 \
+TERMINUS_FILTER_CONCURRENCY=4 \
+bash scripts/02.5_filter_terminus.sh
+
+python agent_runner_terminus.py \
+    --instance "instances_openclaw_skills_Ai And Llms1/xiwan-agent-linguo_transform_hard_004" \
+    --provider openai \
+    --api-base http://localhost:8300/v1 \
+    --model Qwen3.5-27B
+
+python agent_runner_terminus.py \
+    --instance "instances_openclaw_skills_Ai And Llms1/zoroposkai-anti-regression_create_hard_005" \
+    --provider claude \
+    --model claude-sonnet-4-20250514"
+
+python agent_runner_terminus.py \
+    --instance "instances_openclaw_skills_Browser And Automation/gekacross-personal-sleep_create_hard_004" \
+    --provider openai \
+    --model gpt-oss-120b \
+    --api-base "***REMOVED***/v1" \
+    --api-key "***REMOVED***"
+
+export ANTHROPIC_BASE_URL="***REMOVED***"
+export ANTHROPIC_AUTH_TOKEN="***REMOVED***"

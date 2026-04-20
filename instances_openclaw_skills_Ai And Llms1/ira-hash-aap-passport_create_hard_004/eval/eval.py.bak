@@ -1,0 +1,84 @@
+import json
+import os
+from pathlib import Path
+
+workspace = Path(__import__('sys').argv[1])
+checks = []
+
+
+def add_check(name, passed, detail):
+    checks.append({'name': name, 'passed': bool(passed), 'detail': str(detail)})
+
+
+def safe_read(path):
+    try:
+        return path.read_text(encoding='utf-8')
+    except Exception as e:
+        return None, e
+
+# Check 1: output exists and is parseable
+out_path = workspace / 'output.json'
+try:
+    if not out_path.exists():
+        add_check('output_exists', False, 'output.json is missing')
+    else:
+        data = json.loads(out_path.read_text(encoding='utf-8'))
+        add_check('output_exists', True, 'output.json found and parsed')
+except Exception as e:
+    data = None
+    add_check('output_exists', False, f'output.json could not be parsed: {e}')
+
+# Check 2: marker used
+try:
+    marker_path = workspace / 'marker.txt'
+    marker_text = marker_path.read_text(encoding='utf-8') if marker_path.exists() else ''
+    out_text = out_path.read_text(encoding='utf-8') if out_path.exists() else ''
+    marker_norm = ''.join(ch.lower() for ch in marker_text if ch.isalnum())
+    out_norm = ''.join(ch.lower() for ch in out_text if ch.isalnum())
+    passed = bool(marker_norm) and marker_norm in out_norm
+    add_check('marker_preserved', passed, 'marker content referenced in output' if passed else 'marker not found in output')
+except Exception as e:
+    add_check('marker_preserved', False, f'error while checking marker: {e}')
+
+# Check 3: required fields present and reasonable
+try:
+    if isinstance(data, dict):
+        required = ['publicId', 'sessionToken', 'summary']
+        missing = [k for k in required if k not in data]
+        passed = not missing
+        add_check('required_fields', passed, 'all required fields present' if passed else f'missing fields: {missing}')
+    else:
+        add_check('required_fields', False, 'output is not a JSON object')
+except Exception as e:
+    add_check('required_fields', False, f'error while checking fields: {e}')
+
+# Check 4: publicId fuzzy match
+try:
+    expected = 'agent-echo-42'
+    got = str(data.get('publicId', '')) if isinstance(data, dict) else ''
+    passed = expected.lower().replace('-', '') in got.lower().replace('-', '')
+    add_check('publicId_match', passed, f'expected similar to {expected}, got {got}')
+except Exception as e:
+    add_check('publicId_match', False, f'error while checking publicId: {e}')
+
+# Check 5: session token fuzzy match
+try:
+    expected = 'sess_tok_91c0d1'
+    got = str(data.get('sessionToken', '')) if isinstance(data, dict) else ''
+    passed = expected.lower().replace('_', '') in got.lower().replace('_', '')
+    add_check('sessionToken_match', passed, f'expected similar to {expected}, got {got}')
+except Exception as e:
+    add_check('sessionToken_match', False, f'error while checking sessionToken: {e}')
+
+# Check 6: summary mentions signature and 7 challenges
+try:
+    summary = str(data.get('summary', '')) if isinstance(data, dict) else ''
+    norm = summary.lower()
+    passed = ('signature' in norm) and ('7' in norm or 'seven' in norm) and ('challenge' in norm)
+    add_check('summary_quality', passed, 'summary mentions signature and seven challenges' if passed else f'bad summary: {summary}')
+except Exception as e:
+    add_check('summary_quality', False, f'error while checking summary: {e}')
+
+score = (sum(1 for c in checks if c['passed']) / len(checks)) if checks else 0.0
+passed = all(c['passed'] for c in checks)
+print(json.dumps({'passed': passed, 'score': score, 'checks': checks}))
