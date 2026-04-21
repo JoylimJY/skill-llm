@@ -1,0 +1,1 @@
+cd /workspace && python gen_inputs_script.py

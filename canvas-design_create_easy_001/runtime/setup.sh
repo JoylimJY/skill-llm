@@ -1,0 +1,1 @@
+echo 'Setup complete for canvas design task'
