@@ -1,0 +1,89 @@
+{
+    "instance_id": "alirezarezvani-senior-data-scientist_statistical_modeling_and_ml_hard_001",
+    "skill_name": "alirezarezvani-senior-data-scientist",
+    "prompt": "You are a senior data scientist at a digital health platform. You have three tasks that must be combined into a single structured report saved as `analysis_report.json`.\n\n**Task 1 \u2013 Pricing Experiment Analysis:**\nA Q2 A/B test was run on a new premium pricing page. The experiment tracked THREE success metrics simultaneously: subscription conversion, 7-day retention, and support ticket rate. Analyse all three metrics using a two-proportion z-test. Because multiple metrics are being tested at once, apply the appropriate multiple-testing correction to your significance threshold before deciding which results are statistically significant. Also check whether the traffic was split correctly between the two arms \u2014 the platform uses a strict 1% tolerance for traffic imbalance. Report the corrected significance threshold, whether a traffic imbalance was detected, and for each metric: its lift, p-value, and whether it is significant under the corrected threshold.\n\n**Task 2 \u2013 Churn Prediction Feature Pipeline:**\nA raw user-activity CSV file contains several data quality problems (sentinel values of -999, negative spend figures, mixed-case category labels, and empty strings). Clean these issues, then build a full preprocessing pipeline that handles numeric imputation (median strategy), standard scaling, and one-hot encoding for categoricals. Additionally, extract cyclical time-based features from the signup timestamp (day-of-week and month encoded as sine/cosine pairs, plus a binary weekend flag). The pipeline must be fitted exclusively on the training portion of the data \u2014 never on the full dataset. Record the number of training and test samples used.\n\n**Task 3 \u2013 Cross-Validated Model Evaluation:**\nUsing the engineered features from Task 2, train an XGBoost classifier to predict churn. Evaluate it with 5-fold stratified cross-validation and report the mean and standard deviation of both AUC-ROC and AUC-PR. Also compute and report the overfitting gap for AUC-ROC (the difference between mean train score and mean test score), and record the cross-validation strategy name.\n\nAll results must be combined into a single file named `analysis_report.json` with top-level keys: `ab_test_analysis`, `feature_engineering`, and `model_evaluation`.",
+    "difficulty": "hard",
+    "category": "statistical_modeling_and_ml",
+    "build_status": "success",
+    "evaluation": {
+        "score": 0.8,
+        "passed": false,
+        "details": [
+            {
+                "name": "report_is_valid_json",
+                "passed": true,
+                "detail": "Found and parsed /workspace/analysis_report.json"
+            },
+            {
+                "name": "A1_bonferroni_alpha_correct",
+                "passed": true,
+                "detail": "bonferroni_alpha=0.016667 \u2248 0.016667"
+            },
+            {
+                "name": "A2_srm_detected_correctly",
+                "passed": true,
+                "detail": "SRM correctly flagged (imbalance > 1%)"
+            },
+            {
+                "name": "A3_conversion_significant_bonferroni",
+                "passed": false,
+                "detail": "Expected significant=True with p<0.0167, got significant=1.0, p=0.0008909413518887188"
+            },
+            {
+                "name": "A4_retention_not_significant_bonferroni",
+                "passed": false,
+                "detail": "Expected significant=False with p>0.0167, got significant=0.0, p=0.023080048055829083"
+            },
+            {
+                "name": "A5_lift_positive_for_conversion",
+                "passed": true,
+                "detail": "lift=0.1210 (positive, correct)"
+            },
+            {
+                "name": "B1_cyclical_time_features_present",
+                "passed": true,
+                "detail": "All cyclical features found: ['dow_cos', 'dow_sin', 'is_weekend', 'month_cos', 'month_sin']"
+            },
+            {
+                "name": "B2_no_data_leakage",
+                "passed": true,
+                "detail": "fit_on_train_only=True confirmed"
+            },
+            {
+                "name": "B3_dirty_data_cleaned",
+                "passed": true,
+                "detail": "dirty_data_cleaned=True confirmed"
+            },
+            {
+                "name": "B4_train_test_split_valid",
+                "passed": true,
+                "detail": "n_train=2400, n_test=600, total=3000"
+            },
+            {
+                "name": "C1_both_auc_metrics_reported",
+                "passed": true,
+                "detail": "roc_auc mean=0.4534, avg_prec mean=0.1586"
+            },
+            {
+                "name": "C2_model_beats_baseline",
+                "passed": false,
+                "detail": "ROC-AUC=0.4534 does not beat dummy classifier"
+            },
+            {
+                "name": "C3_overfit_gap_reported",
+                "passed": true,
+                "detail": "overfit_gap=0.5398, overfit_warning=True"
+            },
+            {
+                "name": "C4_stratified_kfold_5_used",
+                "passed": true,
+                "detail": "cv_folds=5, cv_strategy=StratifiedKFold"
+            },
+            {
+                "name": "C5_std_reported_for_metrics",
+                "passed": true,
+                "detail": "roc_auc std=0.0261, avg_prec std=0.0083"
+            }
+        ]
+    }
+}

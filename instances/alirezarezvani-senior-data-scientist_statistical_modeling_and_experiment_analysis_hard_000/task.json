@@ -1,0 +1,64 @@
+{
+    "instance_id": "alirezarezvani-senior-data-scientist_statistical_modeling_and_experiment_analysis_hard_000",
+    "skill_name": "alirezarezvani-senior-data-scientist",
+    "prompt": "Our digital health platform recently completed a 14-day patient engagement campaign to improve medication adherence. The raw experiment results and a patient behavioral cohort dataset are available in the workspace under `data/raw/`. The analysis configuration is in `configs/analysis_config.json` and modeling requirements are in `configs/modeling_spec.json`.\n\nYou are a senior data scientist. Please perform the following end-to-end analysis:\n\n**Part 1 \u2014 Experiment Analysis:**\nAnalyze the campaign results from `experiment_results.json`. The experiment tracked one primary metric (adherence_rate) and two secondary metrics (app_open_rate, refill_rate). You must apply the appropriate multiple-testing correction across all three metrics. For each metric, compute the relative lift, p-value, confidence interval, and whether the result is statistically significant under the corrected threshold. Additionally, check every patient segment for sample ratio mismatch using the threshold defined in the config file, and flag any segments that violate this threshold. Save the complete analysis to a file called `experiment_analysis.json`.\n\n**Part 2 \u2014 Feature Engineering + Model Training:**\nUsing the `patient_cohort.csv` data, build a production-grade feature engineering pipeline. Extract cyclical temporal features from the enrollment date column. Handle the numeric and categorical features as specified in the modeling config (note: pharmacy_id is high-cardinality and must be excluded). Train a gradient-boosted classifier to predict 30-day re-engagement. Evaluate it using stratified 5-fold cross-validation, reporting both discrimination metrics (area under ROC curve and area under precision-recall curve) with their mean and standard deviation, plus the overfitting gap for each metric. Save the complete evaluation report to `model_evaluation_report.json`.\n\nBoth output files must be valid JSON. Do not skip the multiple-testing correction \u2014 it is a regulatory requirement for this clinical context.",
+    "difficulty": "hard",
+    "category": "statistical_modeling_and_experiment_analysis",
+    "build_status": "success",
+    "evaluation": {
+        "score": 1.0,
+        "passed": true,
+        "details": [
+            {
+                "name": "experiment_analysis.json exists",
+                "passed": true,
+                "detail": "/workspace/experiment_analysis.json"
+            },
+            {
+                "name": "Bonferroni correction applied",
+                "passed": true,
+                "detail": "Found corrected_alpha=0.01666667, expected\u22480.01667"
+            },
+            {
+                "name": "SRM flagged for diabetic_patients segment",
+                "passed": true,
+                "detail": "SRM keyword found: True, diabetic mentioned: True"
+            },
+            {
+                "name": "Primary metric has lift and CI",
+                "passed": true,
+                "detail": "lift=True, ci=True, p_value=True"
+            },
+            {
+                "name": "model_evaluation_report.json exists",
+                "passed": true,
+                "detail": "/workspace/model_evaluation_report.json"
+            },
+            {
+                "name": "Model reports AUC-ROC and AUC-PR",
+                "passed": true,
+                "detail": "AUC-ROC found: True, AUC-PR found: True"
+            },
+            {
+                "name": "Overfit gap reported",
+                "passed": true,
+                "detail": "Searched for 'overfit'/'overfit_gap'/'gap' in report"
+            },
+            {
+                "name": "AUC-ROC value is plausible",
+                "passed": true,
+                "detail": "AUC-ROC = 0.5982"
+            },
+            {
+                "name": "Cyclical time features extracted (dow_sin, dow_cos, etc.)",
+                "passed": true,
+                "detail": "Cyclical time feature names found in /workspace/model_evaluation_report.json"
+            },
+            {
+                "name": "Stratified 5-fold CV used",
+                "passed": true,
+                "detail": "stratified=True, 5-fold=True"
+            }
+        ]
+    }
+}
