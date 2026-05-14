@@ -349,57 +349,7 @@ uv run python -m src.run cleanup
 - Docker — 沙箱环境
 - vLLM 或任何 OpenAI-compatible API — 模型服务
 
-uv run python -m src.run filter \
-  --api-base http://localhost:8300/v1 \
-  --model Qwen3.5-27B \
-  --output-dir instances_stage1-final \
-  --num-trials 4 \
-  --concurrency 4
 
-uv run python -m src.run synthesize \
-    --skill-dir awesome-claude-skills-master/artifacts-builder \
-    --num 1 \
-    --output-dir temp_instances
-
-docker run --gpus all \
-    --ipc=host \
-    -p 8300:8000 \
-    -v /home/test/test12/models:/models \
-    vllm/vllm-openai:latest \
-    /models/Qwen3.5-27B \
-    --served-model-name "Qwen3.5-27B" \
-    --tensor-parallel-size 8 \
-    --max-model-len 16384 \
-    --gpu-memory-utilization 0.9 \
-    --trust-remote-code \
-    --reasoning-parser qwen3 \
-
-TERMINUS_FILTER_INSTANCES_DIR="instances_openclaw_skills_Cli Utilities&Coding Agents And Ides" \
-TERMINUS_FILTER_PROVIDER=openai \
-TERMINUS_FILTER_MODEL=gpt-oss-120b \
-TERMINUS_FILTER_API_BASE="***REMOVED***/v1" \
-TERMINUS_FILTER_API_KEY="***REMOVED***" \
-TERMINUS_FILTER_NUM_TRIALS=4 \
-TERMINUS_FILTER_CONCURRENCY=4 \
-bash scripts/02.5_filter_terminus.sh
-
-python agent_runner_terminus.py \
-    --instance "instances_openclaw_skills_Ai And Llms1/xiwan-agent-linguo_transform_hard_004" \
-    --provider openai \
-    --api-base http://localhost:8300/v1 \
-    --model Qwen3.5-27B
-
-python agent_runner_terminus.py \
-    --instance "instances_openclaw_skills_Ai And Llms1/zoroposkai-anti-regression_create_hard_005" \
-    --provider claude \
-    --model claude-sonnet-4-20250514"
-
-python agent_runner_terminus.py \
-    --instance "instances_openclaw_skills_Browser And Automation/gekacross-personal-sleep_create_hard_004" \
-    --provider openai \
-    --model gpt-oss-120b \
-    --api-base "***REMOVED***/v1" \
-    --api-key "***REMOVED***"
 
 export ANTHROPIC_BASE_URL="***REMOVED***"
 export ANTHROPIC_AUTH_TOKEN="***REMOVED***"
