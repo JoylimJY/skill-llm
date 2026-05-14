@@ -354,34 +354,7 @@ uv run python -m src.run cleanup
 - Docker — 沙箱环境
 - vLLM 或任何 OpenAI-compatible API — 模型服务
 
-docker run --gpus all \
-    --ipc=host \
-    -p 8300:8000 \
-    -v /home/test/test12/models:/models \
-    vllm/vllm-openai:latest \
-    /models/Qwen3.5-27B \
-    --served-model-name "Qwen3.5-27B" \
-    --tensor-parallel-size 8 \
-    --max-model-len 16384 \
-    --gpu-memory-utilization 0.9 \
-    --trust-remote-code \
-    --reasoning-parser qwen3 
 
-export ANTHROPIC_BASE_URL="***REMOVED***"
-export ANTHROPIC_AUTH_TOKEN="***REMOVED***"
-
-export ANTHROPIC_BASE_URL="***REMOVED***"
-export ANTHROPIC_AUTH_TOKEN="***REMOVED***"
-
-export ANTHROPIC_BASE_URL="***REMOVED***" 
-export ANTHROPIC_AUTH_TOKEN="***REMOVED***" 
-
-TERMINUS_RUN_DIR="results/skill" \
-TERMINUS_PROVIDER="claude" \
-TERMINUS_MODEL="claude-sonnet-4-6" \
-TERMINUS_API_KEY="***REMOVED***" \
-TERMINUS_API_BASE="***REMOVED***" \
-bash scripts/03_evaluate_terminus.sh "instances_test_skill"
 
 
 
