@@ -349,7 +349,3 @@ uv run python -m src.run cleanup
 - Docker — 沙箱环境
 - vLLM 或任何 OpenAI-compatible API — 模型服务
 
-
-
-export ANTHROPIC_BASE_URL="***REMOVED***"
-export ANTHROPIC_AUTH_TOKEN="***REMOVED***"
