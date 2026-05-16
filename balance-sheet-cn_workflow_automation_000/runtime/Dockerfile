@@ -1,0 +1,16 @@
+FROM python:3.11-slim
+
+RUN sed -i 's/deb.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list.d/debian.sources || sed -i 's/deb.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
+
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install openpyxl pandas xlrd xlwt -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+RUN pip install openpyxl -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+RUN mkdir -p /root/.openclaw/workspace/skills/资产负债表/scripts
+RUN mkdir -p /root/.openclaw/workspace/skills/资产负债表/references
