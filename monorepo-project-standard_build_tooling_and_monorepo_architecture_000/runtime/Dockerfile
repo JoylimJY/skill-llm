@@ -1,0 +1,22 @@
+FROM node:20-bookworm-slim
+
+RUN sed -i 's/deb.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list.d/debian.sources || sed -i 's/deb.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
+
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    python3 \
+    python3-pip \
+    jq \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install pnpm globally
+RUN npm install -g pnpm@9 --registry=https://registry.npmjs.org
+
+# Install turbo globally
+RUN npm install -g turbo@2 --registry=https://registry.npmjs.org
+
+# Python for eval script
+RUN pip3 install pyyaml --break-system-packages -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+WORKDIR /workspace

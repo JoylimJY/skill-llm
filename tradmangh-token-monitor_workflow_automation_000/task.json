@@ -1,0 +1,7 @@
+{
+  "instance_id": "tradmangh-token-monitor_workflow_automation_000",
+  "skill_name": "tradmangh-token-monitor",
+  "prompt": "Our AI infrastructure team manages quota usage across multiple LLM providers (openai-codex, github-copilot, google-antigravity). We need to set up the token-monitor quota health checker so it runs twice in sequence against two different snapshots of provider data.\n\nFor the **first run**: use a stricter alert threshold of 15% (not the default), and use the default state file path. The system should detect which providers/quotas are actually below 15%, record them, and emit the appropriate alerts.\n\nFor the **second run** (using the same threshold and same state file): the provider data has changed \u2014 some quotas have recovered, some new ones have dropped. The system should correctly emit a recovery notice for anything that came back above threshold, a new alert for anything newly below threshold, and must NOT re-alert for quotas that were already warned about in the first run.\n\nThe two provider data snapshots are already saved in the workspace at `.openclaw/bin/snapshot1.txt` (for run 1) and `.openclaw/bin/snapshot2.txt` (for run 2). The mock `openclaw` CLI reads whichever file is pointed to by the `OPENCLAW_SNAPSHOT` environment variable.\n\nPlease run both checks in sequence and ensure the state file is correctly maintained between runs.",
+  "category": "workflow_automation",
+  "build_status": "success"
+}

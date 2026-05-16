@@ -1,0 +1,203 @@
+import os
+import random
+
+random.seed(42)
+
+workspace = "/workspace"
+os.makedirs(workspace, exist_ok=True)
+
+# Create a realistic deeply nested directory structure with distractor files
+dirs = [
+    "devops/scripts/monitoring",
+    "devops/scripts/deploy",
+    "devops/scripts/backup",
+    "devops/config/nginx",
+    "devops/config/systemd",
+    "hr/wellness/policies",
+    "hr/wellness/resources",
+    "engineering/tooling/linters",
+    "engineering/tooling/formatters",
+    "engineering/docs/onboarding",
+    "engineering/docs/architecture",
+    "it/desktop/setup",
+    "it/desktop/software",
+    "it/security/policies",
+]
+
+for d in dirs:
+    os.makedirs(os.path.join(workspace, d), exist_ok=True)
+
+# Distractor files - realistic but irrelevant
+distractor_files = {
+    "devops/scripts/monitoring/check_disk.sh": """#!/bin/bash
+# Disk usage monitor
+THRESHOLD=90
+USAGE=$(df / | tail -1 | awk '{print $5}' | tr -d '%')
+if [ "$USAGE" -gt "$THRESHOLD" ]; then
+    echo "ALERT: Disk usage at ${USAGE}%"
+fi
+""",
+    "devops/scripts/deploy/rollback.sh": """#!/bin/bash
+# Rollback deployment
+echo "Rolling back to previous version..."
+git checkout HEAD~1
+systemctl restart app.service
+""",
+    "devops/scripts/backup/db_backup.sh": """#!/bin/bash
+# Database backup script
+BACKUP_DIR=/var/backups/db
+DATE=$(date +%Y%m%d_%H%M%S)
+pg_dump mydb > "${BACKUP_DIR}/backup_${DATE}.sql"
+gzip "${BACKUP_DIR}/backup_${DATE}.sql"
+""",
+    "devops/config/nginx/default.conf": """server {
+    listen 80;
+    server_name example.com;
+    location / {
+        proxy_pass http://localhost:3000;
+    }
+}
+""",
+    "devops/config/systemd/myapp.service": """[Unit]
+Description=My Application
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/node /app/server.js
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+""",
+    "hr/wellness/policies/break_policy_v1.txt": """COMPANY BREAK POLICY v1.0 (OUTDATED)
+Employees should take a 15-minute break every 2 hours.
+Lunch break: 30-60 minutes.
+This policy does NOT cover eye strain or RSI prevention.
+See IT for computer health guidelines.
+""",
+    "hr/wellness/resources/eye_strain_tips.txt": """General Eye Strain Tips (Non-automated)
+- Reduce screen brightness
+- Use blue light glasses
+- Blink more often
+- Take regular breaks
+Contact HR for the automated wellness script request.
+""",
+    "engineering/tooling/linters/.eslintrc.json": """{
+  "env": {"browser": true, "es2021": true},
+  "extends": "eslint:recommended",
+  "rules": {
+    "indent": ["error", 2],
+    "semi": ["error", "always"]
+  }
+}
+""",
+    "engineering/tooling/formatters/.prettierrc": """{
+  "semi": true,
+  "singleQuote": true,
+  "tabWidth": 2,
+  "trailingComma": "es5"
+}
+""",
+    "engineering/docs/onboarding/setup_guide.md": """# Engineering Onboarding Setup Guide
+
+## Prerequisites
+- Install Node.js 18+
+- Install Docker Desktop
+- Clone main repository
+
+## First Day
+1. Set up SSH keys
+2. Configure VPN
+3. Request access to Jira/Confluence
+4. Install recommended IDE extensions
+
+## Health & Wellness
+The IT team provides automated health reminder scripts.
+Ask your onboarding buddy for the ergocare script setup.
+""",
+    "engineering/docs/architecture/system_overview.md": """# System Architecture Overview
+
+## Services
+- API Gateway (Node.js)
+- Auth Service (Python/FastAPI)
+- Data Pipeline (Apache Kafka)
+- Storage (PostgreSQL + S3)
+
+## Monitoring
+- Prometheus + Grafana
+- PagerDuty alerts
+- Weekly health checks
+""",
+    "it/desktop/setup/workstation_config.sh": """#!/bin/bash
+# Workstation initial setup
+apt-get update
+apt-get install -y curl git vim htop
+# Install development tools
+snap install code --classic
+snap install slack --classic
+echo "Workstation setup complete"
+""",
+    "it/desktop/software/approved_software.txt": """APPROVED SOFTWARE LIST (IT Department)
+- VS Code
+- Slack
+- Zoom
+- Chrome/Firefox
+- Docker Desktop
+- Git
+- Terminal emulators: iTerm2, Hyper, Alacritty
+- Health tools: ErgoCare Coach (see IT for setup)
+""",
+    "it/security/policies/screen_lock.sh": """#!/bin/bash
+# Auto screen lock after 15 minutes
+gsettings set org.gnome.desktop.screensaver lock-enabled true
+gsettings set org.gnome.desktop.session idle-delay 900
+echo "Screen lock configured"
+""",
+    "hr/wellness/policies/remote_work_ergonomics.pdf.txt": """REMOTE WORK ERGONOMICS GUIDELINES
+
+Monitor height, chair setup, and lighting recommendations.
+For automated break reminders, contact the IT wellness team.
+Target user profile: Heavy users (8+ hours/day computer use).
+Required coverage: Eye health, back health, RSI prevention.
+Script platform: Linux (Ubuntu/Debian).
+""",
+}
+
+for filepath, content in distractor_files.items():
+    full_path = os.path.join(workspace, filepath)
+    with open(full_path, "w") as f:
+        f.write(content)
+
+# Create a stub/placeholder that indicates what's needed but is NOT a solution
+stub_content = """# PLACEHOLDER - ergocare_pro.sh
+# This file needs to be properly generated by the ErgoCare Coach system.
+# Requirements:
+# - Heavy user profile (8+ hours/day)
+# - Linux platform
+# - All three break tiers (eye, posture, full)
+# - RSI prevention exercises
+# DO NOT USE THIS FILE - it is empty and non-functional
+"""
+with open(os.path.join(workspace, "ergocare_pro.sh"), "w") as f:
+    f.write(stub_content)
+
+# Create a requirements doc that specifies the business need without technical details
+requirements_content = """WELLNESS AUTOMATION REQUIREMENTS
+================================
+Team: Senior Engineering (Heavy Users - 8+ hours/day)
+Platform: Linux (Ubuntu 22.04 LTS)
+Notification type: All notification methods
+Sound: Enabled
+
+Coverage required:
+1. Eye health (20-20-20 protocol)
+2. Full spinal health (seated exercises)
+3. RSI/Wrist prevention
+
+The generated script should be production-ready for our engineering team.
+"""
+with open(os.path.join(workspace, "hr/wellness/resources/requirements.txt"), "w") as f:
+    f.write(requirements_content)
+
+print("Workspace generated successfully.")
+print(f"Files created: {len(distractor_files) + 2}")

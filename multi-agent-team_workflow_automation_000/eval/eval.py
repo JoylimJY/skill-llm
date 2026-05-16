@@ -1,0 +1,282 @@
+#!/usr/bin/env python3
+"""
+Evaluation script for the multi-agent team dispatcher task.
+Checks:
+1. spec_tools.py init was run (state file + init artifact exist)
+2. spec_tools.py analyze was run (analysis artifact exists)
+3. spec_tools.py update --spec-file SPEC.md was run (SPEC.md exists with correct flag)
+4. code_map_generator.py was run on the workspace (code map JSON exists)
+5. project_understanding.py was run (project understanding doc exists)
+6. trae_agent_dispatch.py --project-full-lifecycle was run (all 7 stages present)
+7. --consensus flag was used (consensus docs or audit shows it)
+8. All 4 role doc directories were populated (architect, product-manager, test-expert, solo-coder)
+9. Language consistency (English task → English docs)
+"""
+
+import sys
+import json
+import re
+from pathlib import Path
+from datetime import datetime
+
+def load_audit(workspace: Path) -> list:
+    audit_file = workspace / ".dispatch_audit.jsonl"
+    if not audit_file.exists():
+        return []
+    events = []
+    for line in audit_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line:
+            try:
+                events.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+    return events
+
+def load_spec_state(workspace: Path) -> dict:
+    state_file = workspace / ".spec_state.json"
+    if not state_file.exists():
+        return {}
+    try:
+        return json.loads(state_file.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+def check_spec_init(workspace: Path, audit: list) -> dict:
+    name = "spec_tools_init"
+    # Check audit for spec_init event
+    init_events = [e for e in audit if e.get("event") == "spec_init"]
+    if not init_events:
+        return {"name": name, "passed": False,
+                "detail": "No spec_init event found in audit log. spec_tools.py init was not run."}
+    # Check state file
+    state = load_spec_state(workspace)
+    if "initialized_at" not in state:
+        return {"name": name, "passed": False,
+                "detail": "State file missing 'initialized_at'. init may have failed."}
+    # Check artifact
+    spec_dir = workspace / "docs" / "spec"
+    init_files = list(spec_dir.glob("spec_init_*.json"))
+    if not init_files:
+        return {"name": name, "passed": False,
+                "detail": "No spec_init_*.json artifact found in docs/spec/."}
+    return {"name": name, "passed": True,
+            "detail": f"spec_tools.py init completed. Artifact: {init_files[0].name}"}
+
+def check_spec_analyze(workspace: Path, audit: list) -> dict:
+    name = "spec_tools_analyze"
+    analyze_events = [e for e in audit if e.get("event") == "spec_analyze"]
+    if not analyze_events:
+        return {"name": name, "passed": False,
+                "detail": "No spec_analyze event in audit. spec_tools.py analyze was not run."}
+    spec_dir = workspace / "docs" / "spec"
+    analysis_files = list(spec_dir.glob("spec_analysis_*.json"))
+    if not analysis_files:
+        return {"name": name, "passed": False,
+                "detail": "No spec_analysis_*.json artifact found in docs/spec/."}
+    # Validate content
+    try:
+        data = json.loads(analysis_files[-1].read_text(encoding="utf-8"))
+        if "gaps" not in data or "recommendations" not in data:
+            return {"name": name, "passed": False,
+                    "detail": "Analysis artifact missing 'gaps' or 'recommendations' fields."}
+    except Exception as ex:
+        return {"name": name, "passed": False, "detail": f"Could not parse analysis artifact: {ex}"}
+    return {"name": name, "passed": True,
+            "detail": f"spec_tools.py analyze completed. Gaps: {data.get('gaps', [])}"}
+
+def check_spec_update(workspace: Path, audit: list) -> dict:
+    name = "spec_tools_update_with_flag"
+    update_events = [e for e in audit if e.get("event") == "spec_update"]
+    if not update_events:
+        return {"name": name, "passed": False,
+                "detail": "No spec_update event in audit. spec_tools.py update --spec-file SPEC.md was not run."}
+    # Must have used --spec-file flag
+    flag_used = update_events[-1].get("flag_used", "")
+    if "--spec-file" not in flag_used:
+        return {"name": name, "passed": False,
+                "detail": f"spec_update event found but --spec-file flag not recorded. Got: '{flag_used}'"}
+    # SPEC.md must exist somewhere in workspace
+    spec_files = list(workspace.rglob("SPEC*.md"))
+    if not spec_files:
+        return {"name": name, "passed": False,
+                "detail": "No SPEC*.md file found in workspace after spec update."}
+    # Validate content
+    try:
+        content = spec_files[0].read_text(encoding="utf-8")
+        if "Specification Document" not in content and "spec_tools" not in content:
+            return {"name": name, "passed": False,
+                    "detail": "SPEC.md exists but doesn't appear to be generated by spec_tools.py."}
+    except Exception as ex:
+        return {"name": name, "passed": False, "detail": f"Could not read SPEC.md: {ex}"}
+    return {"name": name, "passed": True,
+            "detail": f"spec_tools.py update --spec-file used correctly. File: {spec_files[0].name}"}
+
+def check_code_map(workspace: Path, audit: list) -> dict:
+    name = "code_map_generated"
+    map_events = [e for e in audit if e.get("event") == "code_map_generated"]
+    if not map_events:
+        return {"name": name, "passed": False,
+                "detail": "No code_map_generated event in audit. code_map_generator.py was not run."}
+    out_dir = workspace / "docs" / "project-understanding"
+    map_files = list(out_dir.glob("code_map_*.json"))
+    if not map_files:
+        return {"name": name, "passed": False,
+                "detail": "No code_map_*.json found in docs/project-understanding/."}
+    try:
+        data = json.loads(map_files[-1].read_text(encoding="utf-8"))
+        if "tree" not in data or "project_path" not in data:
+            return {"name": name, "passed": False,
+                    "detail": "Code map JSON missing 'tree' or 'project_path' fields."}
+    except Exception as ex:
+        return {"name": name, "passed": False, "detail": f"Could not parse code map: {ex}"}
+    return {"name": name, "passed": True,
+            "detail": f"Code map generated successfully. File: {map_files[-1].name}"}
+
+def check_project_understanding(workspace: Path, audit: list) -> dict:
+    name = "project_understanding_generated"
+    pu_events = [e for e in audit if e.get("event") == "project_understanding_generated"]
+    if not pu_events:
+        return {"name": name, "passed": False,
+                "detail": "No project_understanding_generated event in audit. project_understanding.py was not run."}
+    out_dir = workspace / "docs" / "project-understanding"
+    pu_files = list(out_dir.glob("project_understanding_*.md"))
+    if not pu_files:
+        return {"name": name, "passed": False,
+                "detail": "No project_understanding_*.md in docs/project-understanding/."}
+    try:
+        content = pu_files[-1].read_text(encoding="utf-8")
+        if "Project Understanding Document" not in content:
+            return {"name": name, "passed": False,
+                    "detail": "Project understanding doc missing expected header."}
+    except Exception as ex:
+        return {"name": name, "passed": False, "detail": f"Could not read project understanding doc: {ex}"}
+    return {"name": name, "passed": True,
+            "detail": f"Project understanding document created: {pu_files[-1].name}"}
+
+def check_full_lifecycle(workspace: Path, audit: list) -> dict:
+    name = "full_lifecycle_7_stages"
+    lifecycle_events = [e for e in audit if e.get("event") == "lifecycle_completed"]
+    if not lifecycle_events:
+        return {"name": name, "passed": False,
+                "detail": "No lifecycle_completed event in audit. --project-full-lifecycle was not used."}
+    # Check all 7 stages are present
+    stage_events = [e for e in audit if e.get("event") == "stage_completed"]
+    stage_nums = sorted(set(e.get("stage") for e in stage_events if "stage" in e))
+    expected_stages = list(range(1, 8))
+    if stage_nums != expected_stages:
+        return {"name": name, "passed": False,
+                "detail": f"Expected stages {expected_stages}, found stages {stage_nums}."}
+    return {"name": name, "passed": True,
+            "detail": f"All 7 lifecycle stages completed. Stages: {stage_nums}"}
+
+def check_consensus_used(workspace: Path, audit: list) -> dict:
+    name = "consensus_flag_used"
+    # Check for consensus events or lifecycle with consensus
+    consensus_events = [e for e in audit if e.get("event") in ("consensus",) or
+                        (e.get("event") == "dispatch" and e.get("consensus") == True)]
+    lifecycle_consensus = [e for e in audit if e.get("event") == "stage_completed"]
+    # The release review stage (7) should have consensus
+    stage7_events = [e for e in audit if e.get("event") == "stage_completed" and e.get("stage") == 7]
+
+    # Accept if: (a) explicit --consensus true was passed, OR (b) lifecycle was run (stage 7 always gets consensus)
+    if consensus_events or stage7_events:
+        return {"name": name, "passed": True,
+                "detail": f"Consensus mechanism was activated. Events: {len(consensus_events)} explicit, stage-7: {len(stage7_events)}"}
+
+    # Also check for dispatch events with consensus=true
+    dispatch_consensus = [e for e in audit if e.get("event") == "dispatch" and e.get("consensus")]
+    if dispatch_consensus:
+        return {"name": name, "passed": True,
+                "detail": "Consensus flag used in dispatch call."}
+
+    return {"name": name, "passed": False,
+            "detail": "No consensus usage found in audit. --consensus true was not used, or lifecycle with stage 7 not run."}
+
+def check_role_docs_populated(workspace: Path, audit: list) -> dict:
+    name = "all_role_docs_populated"
+    role_dirs = {
+        "architect":       workspace / "docs" / "architect",
+        "product_manager": workspace / "docs" / "product-manager",
+        "test_expert":     workspace / "docs" / "test-expert",
+        "solo_coder":      workspace / "docs" / "solo-coder",
+    }
+    missing = []
+    details = []
+    for role, d in role_dirs.items():
+        doc_files = [f for f in d.iterdir() if f.suffix in (".md", ".json") and not f.name.startswith(".")]
+        if not doc_files:
+            missing.append(role)
+            details.append(f"{role}: NO DOCS")
+        else:
+            details.append(f"{role}: {len(doc_files)} doc(s)")
+
+    if missing:
+        return {"name": name, "passed": False,
+                "detail": f"Missing docs for roles: {missing}. Details: {'; '.join(details)}"}
+    return {"name": name, "passed": True,
+            "detail": f"All role docs populated. {'; '.join(details)}"}
+
+def check_english_language(workspace: Path, audit: list) -> dict:
+    name = "language_consistency_english"
+    # Check dispatch/stage events for language
+    lang_events = [e for e in audit if "lang" in e]
+    if not lang_events:
+        # Check doc content for English
+        architect_dir = workspace / "docs" / "architect"
+        md_files = list(architect_dir.glob("*.md"))
+        if md_files:
+            try:
+                content = md_files[0].read_text(encoding="utf-8")
+                chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', content))
+                if chinese_chars > 10:
+                    return {"name": name, "passed": False,
+                            "detail": f"Docs appear to be in Chinese ({chinese_chars} Chinese chars). Task is in English."}
+                return {"name": name, "passed": True,
+                        "detail": "Docs appear to be in English."}
+            except Exception:
+                pass
+        return {"name": name, "passed": False,
+                "detail": "No language events in audit and no docs to check."}
+
+    en_events = [e for e in lang_events if e.get("lang") == "en"]
+    zh_events = [e for e in lang_events if e.get("lang") == "zh"]
+    if zh_events and not en_events:
+        return {"name": name, "passed": False,
+                "detail": f"All {len(zh_events)} events used Chinese (zh). Task is in English."}
+    if en_events:
+        return {"name": name, "passed": True,
+                "detail": f"English language used in {len(en_events)} events."}
+    return {"name": name, "passed": False,
+            "detail": "Could not determine language from audit events."}
+
+def main():
+    workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("/workspace")
+    audit = load_audit(workspace)
+
+    checks = [
+        check_spec_init(workspace, audit),
+        check_spec_analyze(workspace, audit),
+        check_spec_update(workspace, audit),
+        check_code_map(workspace, audit),
+        check_project_understanding(workspace, audit),
+        check_full_lifecycle(workspace, audit),
+        check_consensus_used(workspace, audit),
+        check_role_docs_populated(workspace, audit),
+        check_english_language(workspace, audit),
+    ]
+
+    passed_count = sum(1 for c in checks if c["passed"])
+    total = len(checks)
+    score = round(passed_count / total, 4)
+    all_passed = passed_count == total
+
+    result = {
+        "passed": all_passed,
+        "score":  score,
+        "checks": checks,
+    }
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+if __name__ == "__main__":
+    main()

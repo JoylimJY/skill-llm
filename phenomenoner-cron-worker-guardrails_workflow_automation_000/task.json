@@ -1,0 +1,7 @@
+{
+  "instance_id": "phenomenoner-cron-worker-guardrails_workflow_automation_000",
+  "skill_name": "phenomenoner-cron-worker-guardrails",
+  "prompt": "Our nightly analytics pipeline is causing constant on-call pages. We have three shell scripts in `scripts/` \u2014 `nightly_summary.sh`, `top_price_alert.sh`, and `push_report.sh` \u2014 that run in an unattended cron context and keep producing spurious failures that wake people up at 2 AM.\n\nHere is what we know:\n1. `nightly_summary.sh` is one huge brittle inline block that breaks whenever someone touches the quoting. We want the actual data-processing logic pulled out into a proper Python tool at `tools/nightly_summary.py`, with the shell wrapper just invoking it. The tool must follow our team's convention: it should say nothing when everything is fine \u2014 specifically, it must output the exact silent-success signal our runtime expects.\n2. `top_price_alert.sh` exits with an error even when the data it captures looks perfectly fine. It seems related to how the script is configured around sorted/filtered pipelines.\n3. `push_report.sh` panics and aborts whenever the remote branch has moved on since the last run, which is completely expected on a shared feature branch. We need it to recover gracefully and retry \u2014 but under no circumstances should it overwrite remote history.\n\nPlease harden all three scripts. Do not break existing file paths. The new Python tool should be at `tools/nightly_summary.py`.",
+  "category": "workflow_automation",
+  "build_status": "success"
+}

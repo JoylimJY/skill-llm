@@ -1,0 +1,10 @@
+#!/bin/bash
+set -e
+
+echo "Setting up workspace permissions..."
+chmod -R 755 /workspace
+
+echo "Verifying workspace structure..."
+tree /workspace 2>/dev/null || find /workspace -type f | sort
+
+echo "Setup complete. Agent may begin."
